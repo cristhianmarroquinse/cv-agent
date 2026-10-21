@@ -49,3 +49,8 @@ svg [role="button"]:focus-visible > rect:first-of-type { stroke: var(--color-acc
   .edge-flow, .dot-pulse { animation: none; }
   * { scroll-behavior: auto !important; }
 }
+
+/* Active piece: breathe in opacity with a soft glow, no scaling (icons must stay inside their box). */
+@keyframes icon-pulse { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 0 transparent); } 50% { opacity: 0.55; filter: drop-shadow(0 0 3px currentColor); } }
+.icon-pulse { animation: icon-pulse 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .icon-pulse { animation: none; } }

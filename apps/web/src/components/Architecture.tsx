@@ -193,10 +193,10 @@ export function Architecture() {
                 : <button autoFocus onClick={() => setMaximized(false)} className="text-xs font-mono flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-muted hover:text-text hover:bg-panel-2"><XIcon size={16} /> {d.close}</button>}
             </div>
             <div className={`flex-1 min-h-0 overflow-auto flex flex-col items-center gap-4 p-4 sm:p-6 ${auto ? 'justify-start' : 'justify-center'}`}>
-              <motion.div initial={{ opacity: 0, scale: 0.92, x: -120 }} animate={{ opacity: 1, scale: 1, x: 0 }} transition={SPRING} className={roomy ? 'w-full max-w-[1500px]' : 'w-full max-w-[420px]'}>
-                <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} maxHeight={auto ? 'max(220px, calc(100dvh - 340px))' : undefined} />
+              <motion.div initial={{ opacity: 0, scale: 0.92, x: -120 }} animate={{ opacity: 1, scale: 1, x: 0 }} transition={SPRING} className={`${roomy ? 'w-full max-w-[1900px]' : 'w-full max-w-[420px]'} ${auto && roomy ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : ''}`}>
+                <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} fit={auto && roomy} />
               </motion.div>
-              {auto ? <StagePanel /> : <p className="text-[11px] text-muted">{d.clickHint} · {d.escHint}</p>}
+              {auto ? <div className="mt-auto w-full flex justify-center"><StagePanel /></div> : <p className="text-[11px] text-muted">{d.clickHint} · {d.escHint}</p>}
               {showTrace && <div className="w-full max-w-[1280px]">{traceView}</div>}
             </div>
           </motion.div>

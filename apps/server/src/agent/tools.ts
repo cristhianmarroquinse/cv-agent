@@ -4,7 +4,7 @@ import { experience, identity, projects, skillGroups, stories } from '../knowled
 import { getCatalog } from '../llm/models.ts'
 import { search, contextFor } from '../rag/store.ts'
 
-export interface ToolOutcome { result: unknown; artifact?: Artifact; summary: string; retrievalHits?: Awaited<ReturnType<typeof search>>['hits'] }
+export interface ToolOutcome { result: unknown; artifact?: Artifact; summary: string; retrievalHits?: Awaited<ReturnType<typeof search>>['hits']; /** embed + search time of search_cv */ retrievalMs?: number }
 
 export const toolDefinitions: ORTool[] = [
   { type: 'function', function: { name: 'search_cv', description: 'Semantic + lexical search over the CV knowledge base. Use when the retrieved context does not answer the question.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Search query in English' } }, required: ['query'] } } },
@@ -23,8 +23,8 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
   switch (name) {
     case 'search_cv': {
       const q = String(args.query ?? '')
-      const { hits } = await search(q, 4)
-      return { result: contextFor(hits), summary: `${hits.length} chunks for "${q}"`, retrievalHits: hits }
+      const r = await search(q, 4)
+      return { result: contextFor(r.hits), summary: `${r.hits.length} chunks for "${q}"`, retrievalHits: r.hits, retrievalMs: r.embedMs + r.searchMs }
     }
     case 'get_experience': {
       const f = typeof args.company === 'string' ? args.company.toLowerCase() : ''

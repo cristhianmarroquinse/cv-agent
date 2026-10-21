@@ -7,7 +7,7 @@ import { search, contextFor, embedBackend, cosineSim } from '../rag/store.ts'
 import { SYSTEM_PROMPT, PROFILE_SUMMARY } from './prompt.ts'
 import { executeTool, toolDefinitions } from './tools.ts'
 import { plan as makePlan } from './planner.ts'
-import { runSpecialist } from './specialists.ts'
+import { retrieveFor, runSpecialist } from './specialists.ts'
 import { verify } from './verifier.ts'
 import { runJobFit } from './jobfit.ts'
 import { readAttachment } from './reader.ts'
@@ -65,7 +65,9 @@ function mergeSteps(pre: string, last: string, emit: Emit): string {
 /** Remove sentences like 'The card below shows…' / 'La tarjeta de abajo…' when no artifact exists. */
 export function stripCardMentions(text: string): string {
   const re = /[^.!?\n]*\b(?:card|cards|tarjeta|tarjetas|panel)\b[^.!?\n]*\b(?:below|abajo|debajo|de la derecha|on the right|shows?|muestra|tiene|has)\b[^.!?\n]*[.!?]?/gi
-  return text.replace(re, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  // Promises of a card that was never produced: 'I can pull up the card', 'puedo abrir la tarjeta'.
+  const promise = /[^.!?\n]*\b(?:pull up|open|render|show you|available on|available as|puedo mostrar|puedo abrir|abrir|mostrar|sacar|disponible en)\b[^.!?\n]*\b(?:card|cards|tarjeta|tarjetas)\b[^.!?\n]*[.!?]?/gi
+  return text.replace(re, '').replace(promise, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 function safeJson(s: string): Record<string, unknown> {
@@ -73,8 +75,8 @@ function safeJson(s: string): Record<string, unknown> {
 }
 
 /** One full turn of the pipeline. Emits every step as events; returns when the stream is complete. */
-export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal): Promise<void> {
-  const t0 = performance.now()
+export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal, receivedAt = performance.now()): Promise<void> {
+  const t0 = receivedAt
   const runId = hashKey(String(t0), Math.random().toString())
   const { model } = req
   const mode = req.mode ?? 'chat'
@@ -84,7 +86,8 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
   emit({ type: 'run.start', runId, model, ts: Date.now() })
   emit({ type: 'edge', from: 'client', to: 'gateway' })
   emit({ type: 'node.enter', node: 'gateway', label: mode === 'jobfit' ? 'job-fit mode' : 'validated · rate limit ok' })
-  emit({ type: 'node.exit', node: 'gateway', ms: 1 })
+  // Gateway time = parsing + validation + rate limit, measured from the moment the request arrived.
+  emit({ type: 'node.exit', node: 'gateway', ms: Math.round(performance.now() - receivedAt) })
 
   // 1. Response cache (exact question + same conversation prefix + same model + flags)
   // Follow-up questions ('y en Walmart?', 'and then?') depend on the conversation, so their cache key includes the
@@ -94,13 +97,22 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
   const attKey = req.attachment ? hashKey(req.attachment.name, String(req.attachment.data.length), req.attachment.data.slice(0, 4000)) : ''
   const respKey = hashKey(req.sessionId ?? '', mode, model, normalizeText(lastUser), prefix, req.reasoning ? 'r' : '', attKey)
   const useCache = !req.noCache
+  const retKey = hashKey(normalizeText(lastUser))
+  let retrievalHit: Awaited<ReturnType<typeof search>> | undefined
   emit({ type: 'edge', from: 'gateway', to: 'cache' })
   const cached = await withNode(emit, 'cache', 'response cache', async () => {
     emit({ type: 'cache.check', scope: 'response', key: respKey })
     const hit = useCache ? responseCache.get(respKey) : undefined
-    if (hit) emit({ type: 'cache.hit', scope: 'response', key: respKey, detail: 'identical question, served without retrieval or LLM' })
-    else emit({ type: 'cache.miss', scope: 'response', key: respKey, detail: useCache ? undefined : 'cache bypassed by the client' })
-    return hit
+    if (hit) { emit({ type: 'cache.hit', scope: 'response', key: respKey, detail: 'identical question, served without retrieval or LLM' }); return hit }
+    emit({ type: 'cache.miss', scope: 'response', key: respKey, detail: useCache ? undefined : 'cache bypassed by the client' })
+    if (mode !== 'jobfit') {
+      // Retrieval cache (global, not affected by the switch): same question text → same embedding and hits.
+      emit({ type: 'cache.check', scope: 'retrieval', key: retKey })
+      retrievalHit = retrievalCache.get(retKey)
+      if (retrievalHit) emit({ type: 'cache.hit', scope: 'retrieval', key: retKey, detail: 'query embedding and hits reused' })
+      else emit({ type: 'cache.miss', scope: 'retrieval', key: retKey })
+    }
+    return undefined
   })
   const replay = async (hit: CachedResponse) => {
     emit({ type: 'edge', from: 'cache', to: 'client', label: 'cached' })
@@ -108,7 +120,8 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
     for (const piece of hit.text.match(/.{1,24}/gs) ?? []) { emit({ type: 'llm.token', delta: piece }); await Bun.sleep(8) }
     if (hit.claims) emit({ type: 'verification', claims: hit.claims, supported: hit.claims.filter(c => c.supported).length, total: hit.claims.length })
     if (hit.suggestions?.length) emit({ type: 'suggestions', items: hit.suggestions })
-    emit({ type: 'run.end', ms: Math.round(performance.now() - t0), steps: 0, usage: { ...hit.usage, costUsd: 0 }, fromCache: true })
+    // A replay spends no tokens: report zeros, not the usage of the original run.
+    emit({ type: 'run.end', ms: Math.round(performance.now() - t0), steps: 0, usage: zeroUsage(), fromCache: true })
   }
   if (cached) { await replay(cached); return }
 
@@ -127,7 +140,6 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
       const out = await runJobFit(model, jd, emit, signal, req.lang ?? 'en')
       return readUsage ? { ...out, usage: addUsage(out.usage, readUsage) } : out
     })
-    emit({ type: 'edge', from: 'llm', to: 'client', label: 'stream' })
     const sug = await suggest({ question: 'Job fit analysis', answer: r.text, asked, signal }, emit)
     const usageJ = sug ? addUsage(r.usage, sug.usage) : r.usage
     if (useCache && r.text.trim()) responseCache.set(respKey, { text: r.text, artifacts: r.artifacts, usage: usageJ, steps: r.steps, suggestions: sug?.items })
@@ -135,49 +147,49 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
     return
   }
 
-  // 2. Retrieval (embed → hybrid search) and the planner run concurrently.
-  emit({ type: 'edge', from: 'cache', to: 'embedder' })
-  const retKey = hashKey(normalizeText(lastUser))
-  // The planner runs concurrently with retrieval, but its events are buffered so the diagram shows one continuous path:
-  // cache → embedder → vector store → llm → planner, instead of a packet jumping to the planner mid-retrieval.
-  const planned: Parameters<Emit>[0][] = []
-  let plannerLive = false
-  const plannerEmit: Emit = ev => { if (plannerLive) emit(ev); else planned.push(ev) }
-  const plannerPromise = makePlan(model, lastUser, plannerEmit, signal)
-  const retrieval = await withNode(emit, 'embedder', embedBackend() === 'transformers' ? 'e5-small · local' : 'BM25 only', async () => {
+  // 2. Retrieval. A retrieval-cache hit reuses the query embedding and the hits, so no embedder work is drawn.
+  let retrieval: Awaited<ReturnType<typeof search>>
+  if (retrievalHit) {
+    retrieval = retrievalHit
+    emit({ type: 'edge', from: 'cache', to: 'vectorstore', label: 'hits reused' })
+    emit({ type: 'node.enter', node: 'vectorstore', label: `${retrieval.hits.length} chunks · reused` })
     emit({ type: 'retrieval.query', query: lastUser })
-    emit({ type: 'cache.check', scope: 'retrieval', key: retKey })
-    const hit = retrievalCache.get(retKey)
-    if (hit) { emit({ type: 'cache.hit', scope: 'retrieval', key: retKey, detail: 'query embedding and hits reused' }); return hit }
-    emit({ type: 'cache.miss', scope: 'retrieval', key: retKey })
-    const r = await search(lastUser)
-    emit({ type: 'retrieval.embed', dims: r.dims ?? 0, ms: r.embedMs, backend: embedBackend() })
-    retrievalCache.set(retKey, r)
-    return r
-  })
-  emit({ type: 'edge', from: 'embedder', to: 'vectorstore' })
-  await withNode(emit, 'vectorstore', `${retrieval.hits.length} chunks · hybrid`, async () => {
-    emit({ type: 'retrieval.hits', hits: retrieval.hits, ms: retrieval.embedMs })
-  })
-  emit({ type: 'edge', from: 'vectorstore', to: 'llm' })
-  emit({ type: 'node.enter', node: 'llm', label: 'planner' })
-  for (const ev of planned) emit(ev)
-  plannerLive = true
+    emit({ type: 'retrieval.hits', hits: retrieval.hits, ms: 0, label: 'reused from retrieval cache' })
+    emit({ type: 'node.exit', node: 'vectorstore' })
+  } else {
+    emit({ type: 'edge', from: 'cache', to: 'embedder' })
+    emit({ type: 'node.enter', node: 'embedder', label: embedBackend() === 'transformers' ? 'e5-small · local' : 'BM25 only' })
+    emit({ type: 'retrieval.query', query: lastUser })
+    retrieval = await search(lastUser)
+    emit({ type: 'retrieval.embed', dims: retrieval.dims ?? 0, ms: retrieval.embedMs, backend: embedBackend() })
+    emit({ type: 'node.exit', node: 'embedder', ms: retrieval.embedMs })
+    retrievalCache.set(retKey, retrieval)
+    emit({ type: 'edge', from: 'embedder', to: 'vectorstore' })
+    emit({ type: 'node.enter', node: 'vectorstore', label: `${retrieval.hits.length} chunks · hybrid` })
+    emit({ type: 'retrieval.hits', hits: retrieval.hits, ms: retrieval.searchMs })
+    emit({ type: 'node.exit', node: 'vectorstore', ms: retrieval.searchMs })
+  }
+
   // 2b. Semantic cache: the question vector is compared with the questions answered earlier in this session.
+  // It runs before the planner so a hit costs no LLM call at all.
   if (useCache && retrieval.qvec) {
+    const tS = performance.now()
     const near = semanticLookup(req.sessionId ?? '', retrieval.qvec, model, mode, !!req.reasoning)
     const hit = near ? responseCache.get(near.entry.key) : undefined
     if (near && hit) {
       emit({ type: 'edge', from: 'vectorstore', to: 'cache', label: 'semantic match' })
       emit({ type: 'node.enter', node: 'cache', label: 'semantic match' })
       emit({ type: 'cache.hit', scope: 'response', key: near.entry.key, detail: `semantic · ${near.score.toFixed(2)} · '${near.entry.question.slice(0, 60)}'` })
-      emit({ type: 'node.exit', node: 'cache', ms: 0 })
-      await plannerPromise.catch(() => undefined)
+      emit({ type: 'node.exit', node: 'cache', ms: Math.round(performance.now() - tS) })
       await replay(hit)
       return
     }
+    emit({ type: 'cache.miss', scope: 'response', key: respKey, detail: `no question in this session within cosine ${SEMANTIC_THRESHOLD}` })
   }
-  const { plan, usage: planUsage } = await plannerPromise
+
+  // 2c. Planner: one small JSON call that decides direct loop vs. fan-out. Drawn live, timed for real.
+  emit({ type: 'edge', from: 'vectorstore', to: 'llm' })
+  const { plan, usage: planUsage } = await withNode(emit, 'llm', 'planner', () => makePlan(model, lastUser, emit, signal))
 
   const artifacts: Artifact[] = []
   let total = planUsage
@@ -185,34 +197,45 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
   let preText = ''
   let step = 0
   const evidence: string[] = [contextFor(retrieval.hits)]
+  // The answer starts reaching the client on the first streamed token, not when the run ends.
+  let streaming = false
+  const onToken = (d: string) => {
+    if (!streaming) { streaming = true; emit({ type: 'edge', from: 'llm', to: 'client', label: 'stream' }) }
+    emit({ type: 'llm.token', delta: d })
+  }
 
   if (plan.mode === 'compound') {
-    // 3a. Fan-out: specialists in parallel, each with scoped retrieval and its own tools; then a synthesizer streams the reply.
-    // Each specialist runs its own scoped retrieval: show that round trip on the diagram once, then the fan-out.
+    // 3a. Fan-out. Phase 1: one scoped hybrid search per specialist, in parallel, measured.
     emit({ type: 'edge', from: 'llm', to: 'vectorstore', label: 'scoped retrieval' })
-    emit({ type: 'node.enter', node: 'vectorstore', label: `${plan.domains.length} scoped searches` })
-    emit({ type: 'node.exit', node: 'vectorstore', ms: 0 })
+    const scoped = await withNode(emit, 'vectorstore', `${plan.domains.length} scoped searches`, async () => {
+      const all = await Promise.all(plan.domains.map(domain => retrieveFor(domain, lastUser)))
+      for (const s of all) emit({ type: 'retrieval.hits', hits: s.hits, ms: s.ms, agent: s.domain, label: `${s.domain} · scoped` })
+      return all
+    })
     emit({ type: 'edge', from: 'vectorstore', to: 'llm' })
+    // Phase 2: specialists in parallel, each with its chunks and tool subset; then a synthesizer streams the reply.
     const results = await withNode(emit, 'llm', `${plan.domains.length} specialists · parallel`, () =>
-      Promise.all(plan.domains.map(domain => runSpecialist(domain, model, lastUser, emit, signal))))
+      Promise.all(scoped.map(s => runSpecialist(s.domain, model, lastUser, s.hits, emit, signal))))
     for (const r of results) { total = addUsage(total, r.usage); artifacts.push(...r.artifacts); evidence.push(contextFor(r.hits), ...r.toolResults) }
     step = 1
     const notes = results.map(r => `## ${r.domain} specialist\n${r.text}`).join('\n\n')
     const t1 = performance.now()
     emit({ type: 'agent.start', agent: 'synthesizer', label: 'merging notes' })
-    emit({ type: 'llm.request', model, step: 2, messageCount: history.length + 2, toolCount: 0, contextChunks: results.reduce((n, r) => n + r.hits.length, 0) })
-    const synth = await streamChat({
-      model, signal, reasoning: req.reasoning, maxTokens: 900,
-      messages: [
-        systemMessage(model, SYSTEM_PROMPT),
-        { role: 'system', content: `You are the synthesizer. ${results.length} specialist agents answered parts of the question in parallel; merge their notes into one coherent answer. Mention the cards below the answer if any were rendered. Do not add facts beyond the notes and the retrieved context.\n\n${notes}\n\n## Retrieved context\n${contextFor(retrieval.hits)}` },
-        ...history.map(m => ({ role: m.role, content: m.content }) as ORMessage),
-      ],
-      onToken: d => emit({ type: 'llm.token', delta: d }),
-      onReasoning: d => emit({ type: 'llm.reasoning', delta: d }),
+    const synth = await withNode(emit, 'llm', 'synthesizer', async () => {
+      emit({ type: 'llm.request', model, step: 2, messageCount: history.length + 2, toolCount: 0, contextChunks: retrieval.hits.length })
+      return streamChat({
+        model, signal, reasoning: req.reasoning, maxTokens: 900,
+        messages: [
+          systemMessage(model, SYSTEM_PROMPT),
+          { role: 'system', content: `You are the synthesizer. ${results.length} specialist agents answered parts of the question in parallel; merge their notes into one coherent answer. Mention the cards below the answer if any were rendered. Do not add facts beyond the notes and the retrieved context.\n\n${notes}\n\n## Retrieved context\n${contextFor(retrieval.hits)}` },
+          ...history.map(m => ({ role: m.role, content: m.content }) as ORMessage),
+        ],
+        onToken,
+        onReasoning: d => emit({ type: 'llm.reasoning', delta: d }),
+      })
     })
     total = addUsage(total, synth.usage)
-    emit({ type: 'llm.usage', step: 2, usage: synth.usage })
+    emit({ type: 'llm.usage', step: 2, usage: synth.usage, agent: 'synthesizer', label: 'synthesizer' })
     emit({ type: synth.usage.cachedTokens > 0 ? 'cache.hit' : 'cache.miss', scope: 'prompt', key: model, detail: `${synth.usage.cachedTokens} prompt tokens read from provider cache` })
     emit({ type: 'agent.end', agent: 'synthesizer', ms: Math.round(performance.now() - t1) })
     finalText = synth.content
@@ -227,9 +250,10 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
     while (step < config.maxSteps) {
       step++
       const allowTools = step < config.maxSteps
+      streaming = false
       const result = await withNode(emit, 'llm', `${model} · step ${step}`, async () => {
         emit({ type: 'llm.request', model, step, messageCount: messages.length, toolCount: allowTools ? toolDefinitions.length : 0, contextChunks: retrieval.hits.length })
-        return streamChat({ model, messages, tools: allowTools ? toolDefinitions : [], signal, reasoning: req.reasoning, onToken: d => emit({ type: 'llm.token', delta: d }), onReasoning: d => emit({ type: 'llm.reasoning', delta: d }) })
+        return streamChat({ model, messages, tools: allowTools ? toolDefinitions : [], signal, reasoning: req.reasoning, onToken, onReasoning: d => emit({ type: 'llm.reasoning', delta: d }) })
       })
       total = addUsage(total, result.usage)
       emit({ type: 'llm.usage', step, usage: result.usage })
@@ -249,10 +273,11 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
           emit({ type: 'tool.start', id: call.id, name: call.name, args: call.args })
           const out = await executeTool(call.name, call.args)
           if (out.retrievalHits) {
+            const ms = out.retrievalMs ?? 0
             emit({ type: 'edge', from: 'tools', to: 'vectorstore' })
             emit({ type: 'node.enter', node: 'vectorstore', label: 'search_cv' })
-            emit({ type: 'retrieval.hits', hits: out.retrievalHits, ms: 0 })
-            emit({ type: 'node.exit', node: 'vectorstore', ms: 0 })
+            emit({ type: 'retrieval.hits', hits: out.retrievalHits, ms, label: 'search_cv tool' })
+            emit({ type: 'node.exit', node: 'vectorstore', ms })
             emit({ type: 'edge', from: 'vectorstore', to: 'tools' })
           }
           emit({ type: 'tool.result', id: call.id, name: call.name, summary: out.summary, ms: Math.round(performance.now() - t1), preview: JSON.stringify(out.result).slice(0, 320) })
@@ -263,7 +288,7 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
             emit({ type: 'edge', from: 'tools', to: 'artifacts' })
             emit({ type: 'node.enter', node: 'artifacts', label: out.artifact.kind })
             emit({ type: 'artifact', artifact: out.artifact })
-            emit({ type: 'node.exit', node: 'artifacts', ms: 1 })
+            emit({ type: 'node.exit', node: 'artifacts' })
           }
           messages.push({ role: 'tool', tool_call_id: call.id, content: resultJson })
         }
@@ -277,9 +302,9 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
     const cleaned = stripCardMentions(finalText)
     if (cleaned !== finalText) { finalText = cleaned; emit({ type: 'llm.replace', content: finalText }) }
   }
-  emit({ type: 'edge', from: 'llm', to: 'client', label: 'stream' })
 
-  // 4. Verifier: an independent agent checks the answer against the evidence the pipeline actually used.
+  // 4. Verifier (same model, separate call) checks the answer against the evidence the pipeline actually used,
+  // while the suggester (cheap model) drafts follow-ups in parallel.
   let claims: Claim[] | undefined
   let suggestions: string[] | undefined
   const sugPromise = suggest({ question: lastUser, answer: finalText, asked, signal }, emit)

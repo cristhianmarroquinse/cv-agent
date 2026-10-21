@@ -1,7 +1,7 @@
 {
-  "at": 1792616477908,
+  "at": 1792625894865,
   "model": "anthropic/claude-haiku-5.5",
-  "cases": 12,
+  "cases": 13,
   "planted": 20,
   "tp": 20,
   "fp": 2,
@@ -36,8 +36,8 @@
     {
       "id": "wrong-number",
       "flagged": [
-        "The chatbot drove 300% growth in registered sellers in 2023",
-        "The chatbot handled 2 million conversations"
+        "The chatbot drove 300% growth in registered sellers in 2023.",
+        "The chatbot handled 2 million conversations."
       ],
       "expected": [
         "300%",
@@ -66,7 +66,7 @@
     {
       "id": "stack-misattribution",
       "flagged": [
-        "At AiKit the backend is NestJS",
+        "AiKit backend is NestJS",
         "AiKit front end is Next.js",
         "AiKit is deployed on Kubernetes"
       ],
@@ -119,8 +119,8 @@
     {
       "id": "education-invented",
       "flagged": [
-        "He holds a master's degree in Machine Learning",
-        "The master's degree is from Stanford"
+        "He holds a master in Machine Learning",
+        "He holds a master from Stanford"
       ],
       "expected": [
         "Stanford",
@@ -144,14 +144,23 @@
       "id": "traction-invented",
       "flagged": [
         "SmartCoach has 12,000 active users",
-        "SmartCoach has $4k MRR",
-        "Cristhian moved SmartCoach to DeepSeek V4 Flash at 87% lower cost"
+        "SmartCoach has $4k MRR"
       ],
       "expected": [
         "12,000",
         "4k"
       ],
       "tp": 2,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "possessives-clean",
+      "flagged": [
+        "Cristhian's HR assistant used LanceDB"
+      ],
+      "expected": [],
+      "tp": 0,
       "fp": 1,
       "fn": 0
     },

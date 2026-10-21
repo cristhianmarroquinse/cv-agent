@@ -141,7 +141,7 @@ export async function renderCvPdf(cv: TailoredCv, role: string | null): Promise<
 
   // Footer pinned to the bottom of the first page (never flows onto a new page).
   const first = doc.getPages()[0]
-  const note = role ? `Tailored for "${role}". Experience, projects and skills are copied verbatim from Cristhian's structured CV data; the profile and fit lines are generated from that data.` : `Generated from Cristhian's structured CV data · cristhianmarroquinse@gmail.com`
+  const note = role ? `Tailored for "${role}". Experience, projects and skills are taken from Cristhian's structured CV data; the profile and fit lines are generated from that data.` : `Generated from Cristhian's structured CV data · cristhianmarroquinse@gmail.com`
   wrap(note, font, 6.8, width).forEach((line, i) => first.drawText(line, { x: PAGE.margin, y: 20 - i * 9 + 9, size: 6.8, font, color: muted }))
   return doc.save()
 }

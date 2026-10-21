@@ -90,8 +90,9 @@ export const useStore = create<State>((set, get) => {
       const e = queue.shift()!
       if (typeof e === 'function') { e(); continue }
       get().applyEvent(e)
+      // Pacing is for the eye: in a hidden tab timers are throttled, so apply events at once instead of stalling.
       const base = PACE[e.type] ?? 0
-      if (base) await sleep(base * get().speed)
+      if (base && !(typeof document !== 'undefined' && document.hidden)) await sleep(base * get().speed)
     }
     draining = false
   }
@@ -235,19 +236,24 @@ export const useStore = create<State>((set, get) => {
           break
         case 'cache.miss':
           if (e.scope === 'prompt') node('llm', { badge: 'no cached tok', badgeTone: 'warn' })
-          else if (e.scope === 'response') node('cache', { badge: e.detail ? 'cache OFF' : 'response MISS', badgeTone: 'warn' })
+          else if (e.scope === 'response') node('cache', { badge: e.detail?.includes('bypassed') ? 'cache OFF' : e.detail?.includes('cosine') ? 'semantic MISS' : 'response MISS', badgeTone: 'warn' })
           io(e.scope === 'prompt' ? 'llm' : 'cache', 'output', `${e.scope} MISS${e.detail ? ' · ' + e.detail : ''}`)
           log(`cache miss (${e.scope})`, 'warn')
           break
         case 'retrieval.query': io('embedder', 'input', `"${e.query.slice(0, 140)}"`); io('vectorstore', 'input', `hybrid search for "${e.query.slice(0, 100)}"`); log(`retrieve: "${e.query.slice(0, 60)}"`); break
         case 'retrieval.embed': node('embedder', { badge: `${e.dims}d · ${e.ms}ms`, badgeTone: 'info' }); io('embedder', 'output', `${e.dims}-d vector · ${e.ms} ms · ${e.backend}`); io('vectorstore', 'input', `${e.dims}-d query vector + BM25 terms`); log(`embed ${e.dims}d in ${e.ms}ms (${e.backend})`); break
-        case 'retrieval.hits':
-          acc.hits = e.hits
-          node('vectorstore', { badge: `${e.hits.length} hits`, badgeTone: 'info' })
-          e.hits.forEach((h, i) => io('vectorstore', 'output', `${i + 1}. ${h.section.split(' › ').pop()} · ${h.method} · ${h.score}`))
-          phase('hits', String(e.hits.length))
-          log(`hits: ${e.hits.map(h => h.section.split(' › ').pop()).join(' · ')}`)
+        case 'retrieval.hits': {
+          if (!e.agent) acc.hits = e.hits
+          const who = e.agent ? `${e.label ?? e.agent} · ` : ''
+          node('vectorstore', { badge: `${e.hits.length} hits${e.agent ? ' · ' + e.agent : ''}${e.ms ? ' · ' + e.ms + 'ms' : ''}`, badgeTone: 'info' })
+          if (e.agent) io('vectorstore', 'input', `${e.label ?? e.agent}: ${e.ms} ms`)
+          e.hits.forEach((h, i) => io('vectorstore', 'output', `${who}${i + 1}. ${h.section.split(' › ').pop()} · ${h.method} · ${h.score}`))
+          // A search made for an agent is that agent's input too.
+          if (e.agent) e.hits.forEach((h, i) => io(`agent:${e.agent}`, 'input', `chunk ${i + 1}: ${h.section.split(' › ').pop()} · ${h.score}`))
+          phase('hits', e.agent ? `${e.hits.length} · ${e.agent}` : String(e.hits.length))
+          log(`hits${e.agent ? ' (' + (e.label ?? e.agent) + ')' : ''}: ${e.hits.map(h => h.section.split(' › ').pop()).join(' · ')}${e.ms ? ' · ' + e.ms + 'ms' : ''}`)
           break
+        }
         case 'llm.request':
           node('llm', { status: 'active', label: `${short(e.model)} · step ${e.step}`, badge: undefined })
           set(s => ({ tools: { ...s.tools, available: e.toolCount > 0, chosen: [], running: null } }))
@@ -266,7 +272,15 @@ export const useStore = create<State>((set, get) => {
           log(`tool calls: ${names.join(', ')}`, 'info')
           break
         }
-        case 'llm.usage': io('llm', 'output', `step ${e.step} · ${e.usage.promptTokens}+${e.usage.completionTokens} tokens · ${e.usage.cachedTokens} cached · ${(e.usage.costUsd ?? 0).toFixed(5)}`); log(`usage step ${e.step}: ${e.usage.promptTokens}+${e.usage.completionTokens} tok, ${e.usage.cachedTokens} cached, $${(e.usage.costUsd ?? 0).toFixed(5)}`); break
+        case 'llm.usage': {
+          // Every call that spends tokens is listed on the LLM card, including the ones agents make.
+          const who = e.agent ? (e.label ?? e.agent) : `step ${e.step}`
+          const line = `${e.usage.promptTokens}+${e.usage.completionTokens} tokens · ${e.usage.cachedTokens} cached · ${(e.usage.costUsd ?? 0).toFixed(5)}`
+          io('llm', 'output', `${who} · ${line}`)
+          if (e.agent) io(`agent:${e.agent}`, 'output', `usage · ${line}`)
+          log(`usage ${who}: ${e.usage.promptTokens}+${e.usage.completionTokens} tok, ${e.usage.cachedTokens} cached, ${(e.usage.costUsd ?? 0).toFixed(5)}`)
+          break
+        }
         case 'tool.start':
           acc.tools.push(e.name)
           node('tools', { status: 'active', label: e.name })
@@ -285,7 +299,7 @@ export const useStore = create<State>((set, get) => {
           set(s => ({ artifacts: [e.artifact, ...s.artifacts.filter(a => a.id !== e.artifact.id)] }))
           patchLastAssistant(m => ({ ...m, artifactIds: m.artifactIds.includes(e.artifact.id) ? m.artifactIds : [...m.artifactIds, e.artifact.id] }))
           node('artifacts', { badge: e.artifact.kind, badgeTone: 'ok' })
-          io('artifacts', 'input', `${e.artifact.kind} result from a tool`); io('artifacts', 'output', `${e.artifact.kind} card "${e.artifact.title}"`)
+          io('artifacts', 'input', e.artifact.kind === 'jobfit' ? 'jobfit assessment from the matcher agents (JSON)' : `${e.artifact.kind} result from a tool (JSON)`); io('artifacts', 'output', `${e.artifact.kind} card "${e.artifact.title}"`)
           phase('artifact', e.artifact.kind)
           log(`artifact: ${e.artifact.kind} "${e.artifact.title}"`, 'ok')
           break
@@ -355,7 +369,12 @@ export const useStore = create<State>((set, get) => {
           patchLastAssistant(m => ({ ...m, status: 'error', error: e.message }))
           set({ sending: false })
           scheduleStageClose()
-          node('llm', { status: 'error' })
+          // Only the box that was working when the stream broke turns red; the rest keep their real state.
+          set(s => {
+            const active = Object.entries(s.nodes).filter(([, v]) => v.status === 'active').map(([k]) => k)
+            const targets = active.length ? active : ['llm']
+            return { nodes: Object.fromEntries(Object.entries(s.nodes).map(([k, v]) => [k, targets.includes(k) ? { ...v, status: 'error' } : v])) as typeof s.nodes }
+          })
           log(`error: ${e.message}`, 'err')
           break
       }

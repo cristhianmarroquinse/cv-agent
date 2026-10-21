@@ -177,7 +177,7 @@ function TailoredCvButton({ artifact }: { artifact: Extract<Artifact, { kind: 'j
       const res = await fetch('/api/cv/tailored', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, role: artifact.role, rows: artifact.rows, jobDescription }) })
       if (!res.ok) throw new Error(String(res.status))
       const blob = await res.blob()
-      const name = res.headers.get('Content-Disposition')?.match(/filename='([^']+)'/)?.[1] ?? 'Cristhian-Marroquin-CV.pdf'
+      const name = res.headers.get('Content-Disposition')?.match(/filename=["']?([^"';]+)/)?.[1] ?? 'Cristhian-Marroquin-CV.pdf'
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a'); a.href = url; a.download = name; a.click()
       setTimeout(() => URL.revokeObjectURL(url), 60_000)

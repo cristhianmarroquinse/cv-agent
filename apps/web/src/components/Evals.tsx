@@ -7,7 +7,7 @@ import { useStore } from '../lib/store.ts'
 type Kind = 'fact' | 'negative' | 'retrieval'
 interface JudgeScores { grounding: number; specificity: number; completeness: number; persuasiveness: number; concision: number; presentation: number; note?: string }
 interface CaseRow { id: string; kind: Kind; question: string; pass: boolean; matched: string[]; missing: string[]; forbidden: string[]; recall?: number; hitSections?: string[]; grounded: { supported: number; total: number } | null; judge?: JudgeScores; ms: number; costUsd: number; answer: string }
-interface ModelReport { model: string; at: number; factsPass: number; factsTotal: number; negativesPass: number; negativesTotal: number; retrievalRecall: number; judge: JudgeScores; groundedRatio: number; avgMs: number; totalMs: number; totalCostUsd: number; cases: CaseRow[] }
+interface ModelReport { model: string; at: number; factsPass: number; factsTotal: number; negativesPass: number; negativesTotal: number; retrievalRecall: number; judge: JudgeScores; groundedRatio: number; avgMs: number; totalMs: number; totalCostUsd: number; judgeCostUsd?: number; cases: CaseRow[] }
 interface Calibration { at: number; model: string; precision: number; recall: number }
 interface Report { at: number; judgeModel: string; models: ModelReport[]; verifierCalibration?: Calibration }
 
@@ -16,8 +16,8 @@ const ADMIN_KEY = 'cv-agent.evals.adminKey'
 const L = {
   es: {
     title: 'Model bake-off', button: 'Evals',
-    sub: 'Informe precalculado: el conjunto dorado (10 preguntas de hechos, 4 adversariales y 4 de recuperación) pasa por el pipeline real con la caché apagada, y un juez LLM independiente puntúa cada respuesta como si presentara al candidato a un reclutador. Los hechos inventados descalifican.',
-    judge: 'juez', date: 'generado', model: 'Modelo', facts: 'Hechos', negatives: 'Adversariales', recall: 'Recall@5', presentation: 'Juez', grounded: 'Verificador', latency: 'Latencia media', cost: 'Coste / run',
+    sub: 'Informe precalculado: el conjunto dorado (10 preguntas de hechos, 4 adversariales y 4 de recuperación) pasa por el pipeline real con la caché apagada, y un juez LLM que no es candidato puntúa las respuestas de hechos y adversariales como si presentara al candidato a un reclutador. Los hechos inventados descalifican. Las de recuperación solo miden recall@5.',
+    judge: 'juez', date: 'generado', model: 'Modelo', facts: 'Hechos', negatives: 'Adversariales', recall: 'Recall@5', presentation: 'Juez', grounded: 'Verificador', latency: 'Latencia media', cost: 'Coste respuestas / run', judgeCost: 'juez',
     best: 'Mejor para presentar el perfil', bestHint: 'mayor puntuación del juez con fundamentación del verificador ≥ 90 %',
     sub1: 'fundamentación', sub2: 'concreción', sub3: 'completitud', sub4: 'persuasión', sub5: 'concisión',
     calibration: 'Calibración del verificador', precision: 'precisión', recallWord: 'recall', cases: 'casos', showCases: 'Ver casos', hideCases: 'Ocultar casos',
@@ -27,8 +27,8 @@ const L = {
   },
   en: {
     title: 'Model bake-off', button: 'Evals',
-    sub: 'Precomputed report: the golden set (10 fact questions, 4 adversarial, 4 retrieval) runs through the real pipeline with the cache off, and an independent LLM judge scores every answer as if presenting the candidate to a recruiter. Invented facts are disqualifying.',
-    judge: 'judge', date: 'generated', model: 'Model', facts: 'Facts', negatives: 'Adversarial', recall: 'Recall@5', presentation: 'Judge', grounded: 'Verifier', latency: 'Avg latency', cost: 'Cost / run',
+    sub: 'Precomputed report: the golden set (10 fact questions, 4 adversarial, 4 retrieval) runs through the real pipeline with the cache off, and an LLM judge that is not a candidate scores the fact and adversarial answers as if presenting the candidate to a recruiter. Invented facts are disqualifying. Retrieval cases only measure recall@5.',
+    judge: 'judge', date: 'generated', model: 'Model', facts: 'Facts', negatives: 'Adversarial', recall: 'Recall@5', presentation: 'Judge', grounded: 'Verifier', latency: 'Avg latency', cost: 'Answer cost / run', judgeCost: 'judge',
     best: 'Best for presenting the profile', bestHint: 'highest judge score with verifier grounding ≥ 90%',
     sub1: 'grounding', sub2: 'specificity', sub3: 'completeness', sub4: 'persuasiveness', sub5: 'concision',
     calibration: 'Verifier calibration', precision: 'precision', recallWord: 'recall', cases: 'cases', showCases: 'Show cases', hideCases: 'Hide cases',
@@ -178,7 +178,7 @@ export function EvalsModal({ open, onClose }: { open: boolean; onClose: () => vo
                             <td className="px-2 py-1.5"><span title={subs} className={`cursor-help ${tone(j.presentation, 4.2, 3.5)}`}>{j.presentation.toFixed(2)}</span><span className="ml-1 text-[10px] text-muted">/5</span></td>
                             <td className={`px-2 py-1.5 ${tone(m.groundedRatio, 0.95, 0.85)}`}>{Math.round(m.groundedRatio * 100)}%</td>
                             <td className="px-2 py-1.5 text-right whitespace-nowrap">{m.avgMs} ms</td>
-                            <td className="px-2 py-1.5 text-right whitespace-nowrap">${m.totalCostUsd.toFixed(4)}</td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap" title={m.judgeCostUsd != null ? `${d.judgeCost} ${m.judgeCostUsd.toFixed(4)}` : undefined}>${m.totalCostUsd.toFixed(4)}</td>
                             <td className="px-2 py-1.5 text-right">
                               <button onClick={() => setExpanded(isOpen ? null : m.model)} className="text-muted hover:text-text flex items-center gap-1 ml-auto text-[10.5px]">{isOpen ? d.hideCases : d.showCases} {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</button>
                             </td>

@@ -84,6 +84,7 @@ app.get('/api/cv', async c => {
 app.route('/api/evals', evalRoutes)
 
 app.post('/api/chat', async c => {
+  const receivedAt = performance.now()
   const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? c.req.header('x-real-ip') ?? 'local'
   const rl = checkRateLimit(ip)
   if (!rl.ok) return c.json({ error: rl.reason }, 429, { 'Retry-After': String(rl.retryAfterSec) })
@@ -98,10 +99,11 @@ app.post('/api/chat', async c => {
     const abort = new AbortController()
     stream.onAbort(() => abort.abort())
     let queue: Promise<unknown> = Promise.resolve()
-    // Every event carries the server time, so the trace shows real latencies, not the paced replay.
-    const emit = (event: PipelineEvent) => { queue = queue.then(() => stream.writeSSE({ data: JSON.stringify({ ...event, ts: Date.now() }) })).catch(() => {}) }
+    // Every event is stamped with the server time at the moment it is emitted (not when the socket drains),
+    // so the trace shows real latencies, not the paced replay.
+    const emit = (event: PipelineEvent) => { const data = JSON.stringify({ ...event, ts: Date.now() }); queue = queue.then(() => stream.writeSSE({ data })).catch(() => {}) }
     try {
-      await runChat(req, emit, abort.signal)
+      await runChat(req, emit, abort.signal, receivedAt)
     } catch (err) {
       console.error('[chat]', err)
       emit({ type: 'error', message: (err as Error).message })

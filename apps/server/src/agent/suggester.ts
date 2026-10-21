@@ -24,6 +24,7 @@ export async function suggest(opts: { question: string; answer: string; asked: s
     })
     const asked = new Set(opts.asked.map(a => a.trim().toLowerCase()))
     const items = (Array.isArray(data?.suggestions) ? data!.suggestions : []).filter(s => typeof s === 'string').map(s => s.trim()).filter(s => s.length > 8 && s.length <= 120 && !asked.has(s.toLowerCase())).slice(0, 3)
+    emit({ type: 'llm.usage', step: 0, usage, agent: 'suggester', label: SUGGESTER_MODEL })
     emit({ type: 'suggestions', items })
     emit({ type: 'agent.end', agent: 'suggester', ms: Math.round(performance.now() - t0), summary: `${items.length} follow-ups` })
     return { items, usage }

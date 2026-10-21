@@ -53,6 +53,12 @@ function columnGeometry(dense = false): Geometry {
     { from: 'llm', to: 'client', d: `M${L} ${pos.llm.y + 8} H${LANE_STREAM} V${pos.client.y + 8} H${L}` },
     { from: 'cache', to: 'client', d: `M${L} ${pos.cache.y - 8} H${LANE_CACHE} V${pos.client.y - 8} H${L}` },
     { from: 'vectorstore', to: 'cache', d: `M${L} ${pos.vectorstore.y} H${LANE_CACHE} V${pos.cache.y + 8} H${L}` },
+    // retrieval-cache hit: the cache hands the stored hits straight to the vector store box (same lane, reverse direction)
+    { from: 'cache', to: 'vectorstore', d: `M${L} ${pos.cache.y + 8} H${LANE_CACHE} V${pos.vectorstore.y} H${L}` },
+    // job-fit mode: no retrieval phase before the agents
+    { from: 'cache', to: 'llm', d: `M${L} ${pos.cache.y} H${LANE_STREAM} V${pos.llm.y - 8} H${L}` },
+    // job-fit assessment card: produced by the agents, not by a tool
+    { from: 'llm', to: 'artifacts', d: `M${R} ${pos.llm.y + 12} H${LANE_RETRIEVAL + 8} V${pos.artifacts.y} H${R}` },
   ]
   const agentPos = (i: number) => ({ x: AX, y: pos.llm.y - ASTEP + i * ASTEP })
   const agentPath = (i: number, n: number, back: boolean) => {
@@ -89,6 +95,9 @@ function wideGeometry(): Geometry {
     { from: 'llm', to: 'client', d: `M${pos.llm.x - 30} ${B} V${B + 34} H${pos.client.x} V${B}` },
     { from: 'cache', to: 'client', d: `M${pos.cache.x} ${B} V${B + 22} H${pos.client.x + 20} V${B}` },
     { from: 'vectorstore', to: 'cache', d: `M${pos.vectorstore.x - 20} ${B} V${B + 22} H${pos.cache.x + 20} V${B}` },
+    { from: 'cache', to: 'vectorstore', d: `M${pos.cache.x + 20} ${B} V${B + 22} H${pos.vectorstore.x - 20} V${B}` },
+    { from: 'cache', to: 'llm', d: `M${pos.cache.x + 30} ${B} V${B + 46} H${pos.llm.x - 10} V${B}` },
+    { from: 'llm', to: 'artifacts', d: `M${pos.llm.x + 30} ${B} V${B + 22} H${pos.artifacts.x} V${B}` },
   ]
   // Anchored lane: agents fill left to right from a fixed slot, so boxes never re-center while a run adds agents.
   const agentPos = (i: number) => ({ x: AX0 + i * ASTEP, y: AY })

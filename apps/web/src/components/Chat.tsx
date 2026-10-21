@@ -52,7 +52,7 @@ export function Chat() {
 export function Composer({ onSent, home }: { onSent?: () => void; home?: boolean }) {
   const { send, sending, lang, messages, followups, models, model, setModel, reasoning, setReasoning, useCache, setUseCache } = useStore()
   const d = t(lang)
-  // Progressive suggestions: three fixed openers, then the suggester agent's follow-ups topped up with the curated list.
+  // Progressive suggestions: two fixed openers, then the suggester agent's follow-ups topped up with the curated list.
   const asked = new Set(messages.filter(m => m.role === 'user').map(m => m.content.trim().toLowerCase()))
   const curated = d.suggestions.filter(x => !asked.has(x.q.toLowerCase()))
   const shown: { q: string; multi?: boolean; llm?: boolean }[] = messages.length === 0

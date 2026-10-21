@@ -270,8 +270,8 @@ export const projects: ProjectInfo[] = [
     name: 'This website (CV agent)',
     period: '2026',
     context: 'Personal demo',
-    description: 'A chat agent over this CV that visualises its own pipeline: gateway, cache, local embeddings + BM25 hybrid retrieval, LLM with tool calling via OpenRouter, and tools that emit UI artifacts.',
-    highlights: ['Real pipeline events streamed over SSE drive the architecture animation', 'Response cache, retrieval cache and provider prompt-cache reads are shown live', 'Model selector across cheap models with live pricing and per-message cost'],
+    description: 'A chat agent over this CV that visualises its own pipeline: gateway, three caches (exact, semantic, retrieval), local embeddings + BM25 hybrid retrieval, a planner with parallel specialist agents, LLM with tool calling via OpenRouter, tools that emit UI artifacts, a grounding verifier, a job-fit pipeline with tailored CV PDF, an MCP server and a persisted model bake-off.',
+    highlights: ['Real pipeline events streamed over SSE drive the architecture animation, including agent runs and per-call usage', 'Response, semantic and retrieval caches plus provider prompt-cache reads are shown live', 'Verifier flags unsupported claims under every answer; evals judged by a non-candidate LLM', 'Model selector across cheap models with live pricing and per-message cost'],
     stack: ['Bun', 'Hono', 'Transformers.js', 'React', 'Vite', 'Tailwind', 'Motion', 'OpenRouter'],
   },
 ]

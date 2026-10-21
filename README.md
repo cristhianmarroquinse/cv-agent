@@ -35,32 +35,32 @@ packages/shared              event, artifact and model contracts shared by both 
 | Node | Backed by |
 |---|---|
 | API Gateway | Hono route, zod validation, per-IP and global rate limit |
-| Cache | LRU response cache (identical question + model) and retrieval cache |
+| Cache | three LRU caches: response (session + mode + model + normalised question + flags), semantic (per-session question vectors, cosine ≥ 0.92, checked before the planner) and retrieval (query embedding + hits). The switch bypasses the first two |
 | Embedder | `multilingual-e5-small` running locally via Transformers.js (384 dims) |
 | Vector store | in-memory cosine search fused with BM25 by reciprocal rank |
 | LLM | OpenRouter chat completions with streaming and tools; `cache_control` for Anthropic models; provider prompt-cache reads reported from usage |
 | Tools | `search_cv`, `get_experience`, `get_skills`, `get_project`, `get_story`, `get_contact`, `get_demo_models` |
-| Artifacts | tool results rendered as timeline, skills, project, story, contact and table cards |
+| Artifacts | tool results rendered as timeline, skills, project, story, contact and table cards; the job-fit assessment card comes from the agents (`llm → artifacts`) |
 
 ## Agents
 
 | Agent | Role | When |
 |---|---|---|
-| planner | one cheap JSON call deciding simple vs compound and which domains; off-topic questions get `simple` with no domains (out of scope), so no specialists run | every chat message, concurrently with retrieval |
+| planner | one cheap JSON call deciding simple vs compound and which domains; off-topic questions get `simple` with no domains (out of scope), so no specialists run | every chat message, after retrieval and the cache checks (it is one extra short call, about a second) |
 | experience / projects / skills | specialists with scoped retrieval (section filter) and their own tool subset, run in parallel | compound questions only |
 | synthesizer | merges the specialists' notes into the streamed answer | compound questions only |
-| verifier | extracts the claims of the final answer and checks each against the evidence the pipeline actually used; unsupported claims are shown under the answer | every chat answer (skipped on cache hits, result cached) |
+| verifier | extracts the claims of the final answer and checks each against the evidence the pipeline actually used; unsupported claims are shown under the answer | every chat answer (skipped on cache hits, result cached). Same model as the chat, separate call; it flags, it does not rewrite |
 | extractor → matcher ×N → writer | job-fit pipeline: structured extraction of requirements, one matcher per requirement in parallel (bounded concurrency 4) with its own retrieval, then a streamed verdict and a `jobfit` artifact | "Job fit" mode in the chat input |
 
-The agents lane on the diagram is populated from `agent.start` / `agent.progress` / `agent.end` events; packets travel LLM → agent → LLM.
+The agents lane on the diagram is populated from `agent.start` / `agent.progress` / `agent.end` events; packets travel LLM → agent → LLM. Every LLM call an agent makes emits `llm.usage` with its `agent`, so the LLM card lists all tokens and cost of the run, and every scoped search emits `retrieval.hits` with its `agent` and measured time. Timestamps are stamped when an event is emitted, not when the socket drains; the gateway time is measured from request arrival. Cache replays report zero usage.
 
 ## Semantic cache and tailored CV
 
 - **Semantic cache**: besides the exact-match response cache, each session keeps the embedding of every answered question; a new question with cosine similarity ≥ 0.92 to one of them (same model, mode and reasoning flag) is served from that answer. The diagram shows vector store → cache with a "semantic HIT 0.93" badge. Both caches are scoped to the page-load session id and can be bypassed with the Cache switch.
-- **Tailored CV**: on a job-fit card, "Generate CV for this role" calls `POST /api/cv/tailored` with the requirements and fit rows. One structured-output call selects and orders facts from `cv.data.ts`; the server keeps only experience bullets, skills and project lines that exist verbatim in that data, then renders a one-page A4 PDF with pdf-lib (`apps/server/src/agent/tailoredCv.ts`). Profile and fit lines are model-written from the same data and the footer says so.
+- **Tailored CV**: on a job-fit card, "Generate CV for this role" calls `POST /api/cv/tailored` with the requirements and fit rows. One structured-output call selects and orders facts from `cv.data.ts`; the server keeps only experience bullets, skills and project lines that match that data (exact or substring after normalisation), then renders an A4 PDF (usually one page) with pdf-lib (`apps/server/src/agent/tailoredCv.ts`). Profile and fit lines are model-written from the same data and the footer says so.
 
 - **Inline artifacts**: tool results render as collapsible cards inside the assistant bubble that produced them (open for the latest answer); the workspace is two columns (architecture + chat).
-- **Follow-up suggestions**: a `suggester` agent (DeepSeek V4.1 Flash, ~$0.0001) proposes three next questions after every answer, in parallel with the verifier; the composer shows three fixed openers first, then the follow-ups topped up with the curated list, hiding anything already asked (`apps/server/src/agent/suggester.ts`).
+- **Follow-up suggestions**: a `suggester` agent (DeepSeek V4.1 Flash, ~$0.0001) proposes three next questions after every answer, in parallel with the verifier; the composer shows two fixed openers first, then the follow-ups topped up with the curated list, hiding anything already asked (`apps/server/src/agent/suggester.ts`).
 - **Attachments**: in Job fit mode a posting can be attached (PDF, PNG/JPG/WebP, DOCX, TXT/MD, 5 MB) or dropped on the input. A `reader` agent runs before the extractor: PDF text layer via unpdf and DOCX via mammoth locally; images and scanned PDFs are transcribed by a cheap multimodal model (Gemini 2.5 Flash Lite, with Haiku 5.5 and Gemini 2.5 Flash as fallbacks). The text is stripped, capped at 8,000 chars and treated as data (`apps/server/src/agent/reader.ts`).
 
 ## Retrieval notes
@@ -86,9 +86,9 @@ The Evals button opens a **precomputed** report, not a live run. The golden set 
 cases (regexes a correct answer must match, derived from `cv.md`), 4 adversarial cases (unknown skill, prompt injection,
 off-topic, fabricated premise: the answer must refuse or say "not documented" without inventing) and 4 retrieval cases
 (recall@5 of the expected `cv.md` sections in the `retrieval.hits` event). Every case runs through the real pipeline with
-the cache off. An independent judge (`google/gemini-2.5-flash`, never a candidate; falls back to Haiku 5.5) scores each
+the cache off. A judge that is never a candidate (`google/gemini-2.5-flash`, falling back to `openai/gpt-5-mini`) scores each
 fact/adversarial answer 1–5 on grounding, specificity, completeness, persuasiveness and concision, as if presenting the
-candidate to a recruiter; invented facts cap the overall at 2. The verifier's supported/total ratio is reported too.
+candidate to a recruiter; invented facts cap the overall at 2. Retrieval cases are not judged. The verifier's supported/total ratio is reported too, and the judge's own cost is stored apart from the answer cost (`judgeCostUsd`).
 
 - `bun run bakeoff [model ...]` (in `apps/server`): runs all catalog models (or the given ones), prints the comparison table and
   writes `apps/server/data/evals-report.json` (commit it; it is what the UI shows). The report embeds
@@ -123,4 +123,4 @@ bun run --cwd apps/server start # serves API + static web on PORT
 ```
 
 Set `OPENROUTER_API_KEY`, `PORT` and `SITE_URL` in the environment. Drop a `cv.pdf` into
-`apps/server/public/` to serve it from `/api/cv` instead of the markdown knowledge base.
+`apps/server/public/` to serve it from `/api/cv`; without it, `/api/cv` renders a generic PDF from `cv.data.ts` with pdf-lib and `/api/cv.md` serves the knowledge base.

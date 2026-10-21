@@ -51,7 +51,7 @@ const T = {
       'Read the cv://knowledge resource and tell me if he fits an LLM Platform Engineer role.',
       'Compare the models this demo uses (get_demo_models) by cost and context.',
     ],
-    notes: 'No authentication: public CV data only, rate-limited per IP. MCP calls are logged on the server but do not animate the diagram.',
+    notes: 'No authentication: public CV data only; POST requests are rate-limited per IP. Tool calls are logged on the server (name and arguments) but do not animate the diagram.',
     copy: 'Copy',
     copied: 'Copied',
     close: 'Close',

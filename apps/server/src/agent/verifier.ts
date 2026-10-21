@@ -59,7 +59,8 @@ export function extractTerms(text: string): string[] {
   return [...out].filter(t => t.length >= 2)
 }
 
-const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/(\d)\.(\d)/g, '$1<dot>$2').replace(/[^a-z0-9%$€#<>]+/g, ' ').replace(/<dot>/g, '.').replace(/\s+/g, ' ').trim()
+// Possessives ("Walmart's", "Cristhian’s") are stripped so the term matches the bare entity in the evidence.
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/(\p{L})['’]s\b/gu, '$1').replace(/(\d)\.(\d)/g, '$1<dot>$2').replace(/[^a-z0-9%$€#<>]+/g, ' ').replace(/<dot>/g, '.').replace(/\s+/g, ' ').trim()
 const hasWord = (h: string, w: string) => (' ' + h + ' ').includes(' ' + w + ' ')
 export function present(term: string, haystack: string): boolean {
   const t = norm(term), h = haystack
@@ -116,6 +117,7 @@ export async function verify(model: string, answer: string, evidence: string, em
     if (hit && c.supported) { c.supported = false; c.note = `mentions "${hit}", which appears nowhere in the CV` }
   }
   const supported = claims.filter(c => c.supported).length
+  emit({ type: 'llm.usage', step: 0, usage, agent: 'verifier', label: 'verifier (same model, separate call)' })
   emit({ type: 'verification', claims, supported, total: claims.length })
   emit({ type: 'agent.end', agent: 'verifier', ms: Math.round(performance.now() - t0), summary: claims.length ? `${supported}/${claims.length} claims grounded` : 'no claims' })
   return { claims, usage, terms }

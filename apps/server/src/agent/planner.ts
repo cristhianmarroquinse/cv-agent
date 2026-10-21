@@ -42,6 +42,7 @@ export async function plan(model: string, question: string, emit: Emit, signal: 
   const result: Plan = data?.mode === 'compound' && domains.length >= 2
     ? { mode: 'compound', domains: domains.slice(0, 3), reason: data?.reason }
     : { mode: 'simple', domains: domains.slice(0, 1), reason: data?.reason }
+  emit({ type: 'llm.usage', step: 0, usage, agent, label: 'planner' })
   emit({ type: 'plan', mode: result.mode, domains: result.domains, reason: result.reason })
   emit({ type: 'agent.end', agent, ms: Math.round(performance.now() - t0), summary: `${result.mode}${result.domains.length ? ': ' + result.domains.join(' + ') : ''}` })
   return { plan: result, usage }

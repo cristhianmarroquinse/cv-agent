@@ -34,12 +34,12 @@ export async function readAttachment(att: Attachment, emit: Emit, signal?: Abort
     emit({ type: 'agent.progress', agent: 'reader', label: `${totalPages} pages · text layer` })
     if (text.trim().length >= MIN_TEXT_CHARS) return done({ text, pages: totalPages, method: 'pdf-text', usage: zero() })
     emit({ type: 'agent.progress', agent: 'reader', label: 'scanned · vision model' })
-    const v = await transcribe({ type: 'file', file: { filename: att.name, file_data: `data:application/pdf;base64,${att.data}` } }, signal)
+    const v = await transcribe({ type: 'file', file: { filename: att.name, file_data: `data:application/pdf;base64,${att.data}` } }, signal, emit)
     return done({ text: v.text, pages: totalPages, method: 'vision-pdf', usage: v.usage })
   }
   if (mime.startsWith('image/')) {
     emit({ type: 'agent.progress', agent: 'reader', label: 'vision model' })
-    const v = await transcribe({ type: 'image_url', image_url: { url: `data:${mime};base64,${att.data}` } }, signal)
+    const v = await transcribe({ type: 'image_url', image_url: { url: `data:${mime};base64,${att.data}` } }, signal, emit)
     return done({ text: v.text, pages: 1, method: 'vision-image', usage: v.usage })
   }
   if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -51,10 +51,15 @@ export async function readAttachment(att: Attachment, emit: Emit, signal?: Abort
 }
 
 /** One multimodal call that transcribes the posting verbatim. Content is data: the prompt forbids following it. */
-async function transcribe(part: Record<string, unknown>, signal?: AbortSignal): Promise<{ text: string; usage: Usage }> {
+async function transcribe(part: Record<string, unknown>, signal?: AbortSignal, emit?: Emit): Promise<{ text: string; usage: Usage }> {
   let lastErr: Error | null = null
   for (const model of VISION_MODELS) {
-    try { return await transcribeWith(model, part, signal) } catch (err) {
+    try {
+      const r = await transcribeWith(model, part, signal)
+      emit?.({ type: 'agent.progress', agent: 'reader', label: `vision · ${model.split('/')[1]}` })
+      emit?.({ type: 'llm.usage', step: 0, usage: r.usage, agent: 'reader', label: model })
+      return r
+    } catch (err) {
       lastErr = err as Error
       if (!/\b(429|5\d\d)\b/.test(lastErr.message)) break
       console.warn(`[reader] ${model} unavailable, trying next:`, lastErr.message.slice(0, 120))

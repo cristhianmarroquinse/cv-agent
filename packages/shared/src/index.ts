@@ -115,14 +115,14 @@ export type PipelineEvent =
   | { type: 'cache.miss'; scope: CacheScope; key: string; detail?: string }
   | { type: 'retrieval.query'; query: string }
   | { type: 'retrieval.embed'; dims: number; ms: number; backend: 'transformers' | 'bm25-only' }
-  | { type: 'retrieval.hits'; hits: RetrievalHit[]; ms: number }
+  | { type: 'retrieval.hits'; hits: RetrievalHit[]; ms: number; /** set when the search was made for an agent (specialist or matcher) */ agent?: AgentId; label?: string }
   | { type: 'llm.request'; model: string; step: number; messageCount: number; toolCount: number; contextChunks: number }
   | { type: 'llm.token'; delta: string }
   | { type: 'llm.reasoning'; delta: string }
   /** Replace the assistant text streamed so far (e.g. drop the pre-tool-call text, or strip an unbacked sentence). */
   | { type: 'llm.replace'; content: string }
   | { type: 'llm.tool_calls'; calls: { id: string; name: string; args: Record<string, unknown> }[] }
-  | { type: 'llm.usage'; step: number; usage: Usage }
+  | { type: 'llm.usage'; step: number; usage: Usage; /** set for calls made by agents (planner, specialists, verifier, …) */ agent?: AgentId; label?: string }
   | { type: 'tool.start'; id: string; name: string; args: Record<string, unknown> }
   | { type: 'tool.result'; id: string; name: string; summary: string; ms: number; /** first characters of the raw result, for the trace inspector */ preview?: string }
   | { type: 'artifact'; artifact: Artifact }

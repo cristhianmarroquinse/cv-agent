@@ -21,7 +21,10 @@ export interface CaseResult {
   grounded: { supported: number; total: number } | null
   judge?: JudgeScores
   ms: number
+  /** cost of the answer run only; the judge's own cost is kept apart */
   costUsd: number
+  judgeCostUsd?: number
+  judgeModel?: string
   answer: string
 }
 
@@ -39,7 +42,10 @@ export interface ModelReport {
   groundedRatio: number
   avgMs: number
   totalMs: number
+  /** answers only */
   totalCostUsd: number
+  /** what the judge cost, kept apart so candidates are compared on their own spend */
+  judgeCostUsd?: number
   cases: CaseResult[]
 }
 
@@ -99,7 +105,7 @@ export async function runCase(model: string, c: GoldenCase, signal: AbortSignal)
   const forbidden = (c.forbid ?? []).filter(p => rx(p).test(answer))
   const pass = missing.length === 0 && forbidden.length === 0
   const j = await judge({ question: c.question, answer, facts: c.kind === 'fact' ? (c.expect ?? []) : [], kind: c.kind, signal }).catch(() => null)
-  return { ...base, pass, matched, missing, forbidden, judge: j?.scores, costUsd: costUsd + (j?.usage.costUsd ?? 0) }
+  return { ...base, pass, matched, missing, forbidden, judge: j?.scores, judgeCostUsd: j?.usage.costUsd ?? undefined, judgeModel: j?.model }
 }
 
 /** Upstream 429s (provider rate limits) are transient: retry twice with backoff before counting a failure. */
@@ -143,6 +149,7 @@ export function summarise(model: string, cases: CaseResult[], totalMs: number): 
     avgMs: Math.round(mean(cases.map(c => c.ms))),
     totalMs,
     totalCostUsd: Number(cases.reduce((n, c) => n + c.costUsd, 0).toFixed(5)),
+    judgeCostUsd: Number(cases.reduce((n, c) => n + (c.judgeCostUsd ?? 0), 0).toFixed(5)),
     cases,
   }
 }

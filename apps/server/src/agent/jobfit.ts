@@ -1,4 +1,4 @@
-import type { Artifact, JobFitRow, Usage } from '@cv-agent/shared'
+import type { Artifact, JobFitRow, RetrievalHit, Usage } from '@cv-agent/shared'
 import { config } from '../config.ts'
 import { completeJson, streamChat } from '../llm/openrouter.ts'
 import { search, contextFor } from '../rag/store.ts'
@@ -30,7 +30,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number
   return out
 }
 
-/** Three-agent pipeline: extractor → N matchers in parallel (each with its own retrieval) → writer (streams). */
+/** Three-agent pipeline: extractor → one retrieval per requirement (measured) → N matchers in parallel → writer (streams). */
 export async function runJobFit(model: string, jobDescription: string, emit: Emit, signal: AbortSignal, lang: 'es' | 'en' = 'en'): Promise<{ text: string; artifacts: Artifact[]; usage: Usage; steps: number }> {
   let usage = zero()
   // 1. extractor
@@ -38,48 +38,59 @@ export async function runJobFit(model: string, jobDescription: string, emit: Emi
   emit({ type: 'agent.start', agent: 'extractor', label: 'structured extraction' })
   const ex = await completeJson<Extracted>({ model, system: EXTRACT, user: jobDescription, maxTokens: 900, signal })
   usage = add(usage, ex.usage)
+  emit({ type: 'llm.usage', step: 0, usage: ex.usage, agent: 'extractor', label: 'extractor' })
   const reqs = (ex.data?.requirements ?? []).filter(r => typeof r?.text === 'string').slice(0, config.maxRequirements).map(r => ({ text: r.text, kind: r.kind === 'nice' ? 'nice' as const : 'must' as const }))
   const role = ex.data?.role || 'the role'
   emit({ type: 'agent.end', agent: 'extractor', ms: Math.round(performance.now() - t0), summary: `${reqs.length} requirements · ${role}` })
   if (!reqs.length) return { text: 'I could not extract requirements from that text. Paste the job description itself (responsibilities and requirements).', artifacts: [], usage, steps: 1 }
 
-  // 2. matchers (parallel fan-out, bounded concurrency)
+  // 2a. one hybrid search per requirement (this is the only vector-store work in the pipeline; measured as such)
+  emit({ type: 'edge', from: 'llm', to: 'vectorstore', label: 'per-requirement retrieval' })
+  emit({ type: 'node.enter', node: 'vectorstore', label: `${reqs.length} searches` })
+  t0 = performance.now()
+  const retrievals: RetrievalHit[][] = await Promise.all(reqs.map(async req => {
+    const r = await search(req.text, 5)
+    emit({ type: 'retrieval.hits', hits: r.hits, ms: r.searchMs, agent: 'matcher', label: req.text })
+    return r.hits
+  }))
+  emit({ type: 'node.exit', node: 'vectorstore', ms: Math.round(performance.now() - t0) })
+  emit({ type: 'edge', from: 'vectorstore', to: 'llm' })
+
+  // 2b. matchers (parallel fan-out, bounded concurrency), one LLM call each
   t0 = performance.now()
   let done = 0
   emit({ type: 'agent.start', agent: 'matcher', label: `0/${reqs.length}`, parallel: true })
-  emit({ type: 'edge', from: 'llm', to: 'vectorstore', label: 'scoped retrieval' })
-  emit({ type: 'node.enter', node: 'vectorstore', label: `${reqs.length} scoped searches` })
-  const rows: JobFitRow[] = await mapLimit(reqs, 4, async req => {
-    const r = await search(req.text, 5)
-    const m = await completeJson<Match>({ model, system: MATCH, user: `REQUIREMENT: ${req.text}\n\nEVIDENCE:\n${contextFor(r.hits)}`, maxTokens: 300, signal })
+  const rows: JobFitRow[] = await mapLimit(reqs, 4, async (req, i) => {
+    const m = await completeJson<Match>({ model, system: MATCH, user: `REQUIREMENT: ${req.text}\n\nEVIDENCE:\n${contextFor(retrievals[i])}`, maxTokens: 300, signal })
     usage = add(usage, m.usage)
+    emit({ type: 'llm.usage', step: 0, usage: m.usage, agent: 'matcher', label: `matcher · ${req.text.slice(0, 40)}` })
     done++
     emit({ type: 'agent.progress', agent: 'matcher', label: `${done}/${reqs.length}` })
     const level = m.data?.level === 'strong' || m.data?.level === 'partial' || m.data?.level === 'gap' ? m.data.level : 'gap'
     return { requirement: req.text, kind: req.kind, level, evidence: m.data?.evidence ?? 'No evidence found.' }
   })
   const summary = { strong: rows.filter(r => r.level === 'strong').length, partial: rows.filter(r => r.level === 'partial').length, gap: rows.filter(r => r.level === 'gap').length }
-  emit({ type: 'node.exit', node: 'vectorstore', ms: Math.round(performance.now() - t0) })
-  emit({ type: 'edge', from: 'vectorstore', to: 'llm' })
   emit({ type: 'agent.end', agent: 'matcher', ms: Math.round(performance.now() - t0), summary: `${summary.strong} strong · ${summary.partial} partial · ${summary.gap} gap` })
 
+  // The fit card is assembled by the orchestrator from the matcher rows: it comes from the LLM node, not from a tool.
   const artifact: Artifact = { kind: 'jobfit', id: `jobfit-${Date.now().toString(36)}`, title: `Fit: ${role}`, role, rows, summary }
-  emit({ type: 'edge', from: 'tools', to: 'artifacts' })
+  emit({ type: 'edge', from: 'llm', to: 'artifacts', label: 'assessment' })
   emit({ type: 'node.enter', node: 'artifacts', label: 'jobfit' })
   emit({ type: 'artifact', artifact })
-  emit({ type: 'node.exit', node: 'artifacts', ms: 1 })
+  emit({ type: 'node.exit', node: 'artifacts' })
 
-  // 3. writer (streams the verdict)
+  // 3. writer (streams the verdict; the stream edge is drawn with the first token)
   t0 = performance.now()
   emit({ type: 'agent.start', agent: 'writer', label: 'verdict' })
   emit({ type: 'llm.request', model, step: 2, messageCount: 2, toolCount: 0, contextChunks: 0 })
+  let streaming = false
   const w = await streamChat({
     model, signal, maxTokens: 900,
     messages: [{ role: 'system', content: WRITE(lang) }, { role: 'user', content: `ROLE: ${role}\nJOB DESCRIPTION (excerpt): ${jobDescription.slice(0, 1500)}\n\nASSESSMENT:\n${JSON.stringify(rows, null, 1)}` }],
-    onToken: d => emit({ type: 'llm.token', delta: d }),
+    onToken: d => { if (!streaming) { streaming = true; emit({ type: 'edge', from: 'llm', to: 'client', label: 'stream' }) } emit({ type: 'llm.token', delta: d }) },
   })
   usage = add(usage, w.usage)
-  emit({ type: 'llm.usage', step: 2, usage: w.usage })
+  emit({ type: 'llm.usage', step: 2, usage: w.usage, agent: 'writer', label: 'writer' })
   emit({ type: 'agent.end', agent: 'writer', ms: Math.round(performance.now() - t0) })
   return { text: w.content, artifacts: [artifact], usage, steps: 2 + reqs.length }
 }

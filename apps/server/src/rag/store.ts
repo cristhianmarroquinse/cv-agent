@@ -54,7 +54,8 @@ export function getChunk(id: string) { return chunks.find(c => c.id === id) }
 function cosine(a: Float32Array, b: Float32Array) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s }
 
 /** Hybrid search: reciprocal-rank fusion of dense cosine ranking and BM25 ranking. */
-export async function search(query: string, k = config.retrievalTopK, filter?: (section: string) => boolean): Promise<{ hits: RetrievalHit[]; embedMs: number; dims: number | null; qvec: Float32Array | null }> {
+export async function search(query: string, k = config.retrievalTopK, filter?: (section: string) => boolean): Promise<{ hits: RetrievalHit[]; embedMs: number; searchMs: number; dims: number | null; qvec: Float32Array | null }> {
+  const tStart = performance.now()
   const allowed = (i: number) => !filter || filter(chunks[i].section)
   const lexical = bm25.score(query)
   const lexRank = lexical.map((s, i) => ({ i, s })).filter(x => x.s > 0 && allowed(x.i)).sort((a, b) => b.s - a.s)
@@ -82,7 +83,8 @@ export async function search(query: string, k = config.retrievalTopK, filter?: (
     method: f.dense !== undefined && f.lex !== undefined ? 'hybrid' : f.dense !== undefined ? 'vector' : 'bm25',
     preview: chunks[i].text.split('\n').slice(1).join(' ').slice(0, 140),
   }))
-  return { hits, embedMs, dims, qvec }
+  const searchMs = Math.max(0, Math.round(performance.now() - tStart - embedMs))
+  return { hits, embedMs, searchMs, dims, qvec }
 }
 
 export function cosineSim(a: Float32Array, b: Float32Array) { return cosine(a, b) }

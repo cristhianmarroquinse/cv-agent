@@ -6,7 +6,8 @@ import { completeJson } from '../llm/openrouter.ts'
  * presents the candidate to a recruiter. Invented facts are disqualifying: grounding <= 2 caps the overall.
  */
 export const JUDGE_MODEL = 'google/gemini-2.5-flash'
-export const JUDGE_FALLBACK = 'anthropic/claude-haiku-5.5'
+/** Fallback must not be a candidate either, so a judge never scores its own answers. */
+export const JUDGE_FALLBACK = 'openai/gpt-5-mini'
 
 export interface JudgeScores { grounding: number; specificity: number; completeness: number; persuasiveness: number; concision: number; presentation: number; note?: string }
 

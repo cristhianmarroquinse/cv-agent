@@ -255,7 +255,10 @@ export function Diagram({ layout, selected, onSelect, maxHeight }: { layout: Lay
               onClick={() => onSelect({ kind: 'node', id })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect({ kind: 'node', id }) } }}>
               {isSel('node', id) && <rect x={-W / 2 - 4} y={-H / 2 - 4} width={W + 8} height={H + 8} rx={10} fill="none" stroke="#e5e9f0" strokeWidth={1} strokeDasharray="3 3" />}
               <rect x={-W / 2} y={-H / 2} width={W} height={H} rx={7} fill="#0f1520" stroke={BORDER[s.status]} strokeWidth={s.status === 'active' ? 1.8 : 1.2} filter={s.status === 'active' ? `url(#glow-${layout})` : undefined} />
-              {(() => { const Icon = NODE_ICON[id]; return <Icon x={-W / 2 + 8} y={-12} width={12} height={12} color={DOT[id]} strokeWidth={2.2} opacity={s.status === 'idle' ? 0.55 : 1} className={s.status === 'active' ? 'icon-pulse' : undefined} /> })()}
+              {(() => { const Icon = NODE_ICON[id]; return (
+                // Outer group places the icon; the inner one pulses around (0,0), which is the icon centre.
+                <g transform={`translate(${-W / 2 + 14} -6)`}><g className={s.status === 'active' ? 'icon-pulse' : undefined}><Icon x={-6} y={-6} width={12} height={12} color={DOT[id]} strokeWidth={2.2} opacity={s.status === 'idle' ? 0.55 : 1} /></g></g>
+              ) })()}
               <text x={-W / 2 + 24} y={-1.5} fontSize={10.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill={s.status === 'idle' ? '#aab4c5' : '#f1f5f9'}>{d.nodes[id]}</text>
               <text x={-W / 2 + 13} y={13} fontSize={7.5} fontFamily="JetBrains Mono, monospace" fill={s.status === 'active' ? '#5eead4' : '#6b7890'}>{sub.length > 24 ? sub.slice(0, 23) + '…' : sub}</text>
               {s.badge && (
@@ -304,7 +307,7 @@ function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick }: { a: Agent
       onClick={onClick} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}>
       {selected && <rect x={-AW / 2 - 4} y={-AH / 2 - 4} width={AW + 8} height={AH + 8} rx={9} fill="none" stroke="#e5e9f0" strokeWidth={1} strokeDasharray="3 3" />}
       <rect x={-AW / 2} y={-AH / 2} width={AW} height={AH} rx={6} fill="#0f1520" stroke={active ? '#a78bfa' : '#4c3f7a'} strokeWidth={active ? 1.8 : 1.2} filter={active ? glow : undefined} />
-      <Bot x={-AW / 2 + 7} y={-11} width={12} height={12} color={AGENT_DOT[a.id]} strokeWidth={2.2} className={active ? 'icon-pulse' : undefined} />
+      <g transform={`translate(${-AW / 2 + 13} -5)`}><g className={active ? 'icon-pulse' : undefined}><Bot x={-6} y={-6} width={12} height={12} color={AGENT_DOT[a.id]} strokeWidth={2.2} /></g></g>
       <text x={-AW / 2 + 22} y={-1} fontSize={9.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill="#f1f5f9">{name}{a.parallel ? ' ∥' : ''}</text>
       <text x={-AW / 2 + 11} y={11} fontSize={7} fontFamily="JetBrains Mono, monospace" fill={active ? '#a78bfa' : '#6b7890'}>{sub.length > 27 ? sub.slice(0, 26) + '…' : sub}</text>
     </motion.g>

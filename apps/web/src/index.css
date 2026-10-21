@@ -56,5 +56,5 @@ svg [role="button"]:focus-visible > rect:first-of-type { stroke: var(--color-acc
   50% { opacity: 0.75; transform: scale(1.22); filter: drop-shadow(0 0 3px currentColor); }
 }
 /* Heartbeat: grows and shrinks around its own centre; 22% keeps a 12px icon inside its box. */
-.icon-pulse { animation: icon-pulse 0.9s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+.icon-pulse { animation: icon-pulse 0.9s ease-in-out infinite; transform-origin: 0 0; }
 @media (prefers-reduced-motion: reduce) { .icon-pulse { animation: none; } }

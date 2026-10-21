@@ -11,7 +11,7 @@ import { t } from '../lib/i18n.ts'
 
 // Two geometries for the same diagram: a narrow column (sidebar) and a wide horizontal layout (full screen).
 // Nodes animate between them with Motion, so maximizing reads as the pipeline spreading out across the screen.
-type Layout = 'column' | 'wide'
+type Layout = 'column' | 'columnDense' | 'wide'
 const ORDER: NodeId[] = ['client', 'gateway', 'cache', 'embedder', 'vectorstore', 'llm', 'tools', 'artifacts']
 const DOT: Record<NodeId, string> = { client: '#fb923c', gateway: '#60a5fa', cache: '#fbbf24', embedder: '#a78bfa', vectorstore: '#60a5fa', llm: '#4ade80', tools: '#5eead4', artifacts: '#f472b6' }
 const AGENT_DOT: Record<AgentId, string> = { planner: '#fbbf24', experience: '#60a5fa', projects: '#f472b6', skills: '#a78bfa', synthesizer: '#4ade80', verifier: '#5eead4', reader: '#fb923c', suggester: '#60a5fa', extractor: '#fbbf24', matcher: '#60a5fa', writer: '#4ade80' }
@@ -32,8 +32,9 @@ interface Geometry {
   minHeight: (n: number) => number
 }
 
-function columnGeometry(): Geometry {
-  const W = 128, H = 40, X = 90, Y0 = 34, STEP = 64, AW = 124, AH = 34, AX = 272, ASTEP = 40, BUS_X = 186
+function columnGeometry(dense = false): Geometry {
+  // dense: one-line boxes (icon + name) for the workspace sidebar; detail lives in the card
+  const W = dense ? 112 : 128, H = dense ? 28 : 40, X = 90, Y0 = dense ? 26 : 34, STEP = dense ? 46 : 64, AW = dense ? 112 : 124, AH = dense ? 26 : 34, AX = 272, ASTEP = dense ? 32 : 40, BUS_X = 186
   const LANE_CACHE = 10, LANE_STREAM = 18, LANE_TOOLS = 164, LANE_RETRIEVAL = 172
   const pos = Object.fromEntries(ORDER.map((id, i) => [id, { x: X, y: Y0 + i * STEP }])) as Record<NodeId, { x: number; y: number }>
   const L = X - W / 2, R = X + W / 2
@@ -103,7 +104,7 @@ function wideGeometry(): Geometry {
   }
 }
 
-const GEO: Record<Layout, Geometry> = { column: columnGeometry(), wide: wideGeometry() }
+const GEO: Record<Layout, Geometry> = { column: columnGeometry(), columnDense: columnGeometry(true), wide: wideGeometry() }
 
 /** Full-screen views use the wide horizontal layout only when there is room; phones keep the column. */
 export function useRoomy() {
@@ -174,7 +175,7 @@ export function Architecture() {
           <button onClick={() => setMaximized(true)} title={d.maximize} aria-label={d.maximize} className="ml-auto text-xs font-mono flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-muted hover:text-text hover:bg-panel-2"><Maximize2 size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-3">
-          {!open && <Diagram layout="column" selected={selected} onSelect={setSelected} />}
+          {!open && <Diagram layout="columnDense" selected={selected} onSelect={setSelected} />}
           <p className="px-1 text-[11px] text-muted leading-relaxed">{d.clickHint}</p>
           {traceView}
         </div>
@@ -212,6 +213,7 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit, compactToo
   const { nodes, agents, packets, activeEdge, doneEdges, tools, lang, speed } = useStore()
   const d = t(lang)
   const g = GEO[layout]
+  const dense = layout === 'columnDense'
   const n = agents.length
   const wide = layout === 'wide'
   // Start from the column geometry on first wide render so the nodes visibly spread out.
@@ -263,10 +265,10 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit, compactToo
               <rect x={-W / 2} y={-H / 2} width={W} height={H} rx={7} fill="#0f1520" stroke={BORDER[s.status]} strokeWidth={s.status === 'active' ? 1.8 : 1.2} filter={s.status === 'active' ? `url(#glow-${layout})` : undefined} />
               {(() => { const Icon = NODE_ICON[id]; return (
                 // Outer group places the icon; the inner one pulses around (0,0), which is the icon centre.
-                <g transform={`translate(${-W / 2 + 14} -6)`}><g className={s.status === 'active' ? 'icon-pulse' : undefined}><Icon x={-6} y={-6} width={12} height={12} color={DOT[id]} strokeWidth={2.2} opacity={s.status === 'idle' ? 0.55 : 1} /></g></g>
+                <g transform={`translate(${-W / 2 + 14} ${dense ? 0 : -6})`}><g className={s.status === 'active' ? 'icon-pulse' : undefined}><Icon x={-6} y={-6} width={12} height={12} color={DOT[id]} strokeWidth={2.2} opacity={s.status === 'idle' ? 0.55 : 1} /></g></g>
               ) })()}
-              <text x={-W / 2 + 24} y={-1.5} fontSize={10.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill={s.status === 'idle' ? '#aab4c5' : '#f1f5f9'}>{d.nodes[id]}</text>
-              <text x={-W / 2 + 13} y={13} fontSize={7.5} fontFamily="JetBrains Mono, monospace" fill={s.status === 'active' ? '#5eead4' : '#6b7890'}>{sub.length > 24 ? sub.slice(0, 23) + '…' : sub}</text>
+              <text x={-W / 2 + 24} y={dense ? 3.5 : -1.5} fontSize={10.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill={s.status === 'idle' ? '#aab4c5' : '#f1f5f9'}>{d.nodes[id]}</text>
+              {!dense && <text x={-W / 2 + 13} y={13} fontSize={7.5} fontFamily="JetBrains Mono, monospace" fill={s.status === 'active' ? '#5eead4' : '#6b7890'}>{sub.length > 24 ? sub.slice(0, 23) + '…' : sub}</text>}
               {s.badge && (
                 <g>
                   <rect x={-42} y={H / 2 + 4} width={84} height={13} rx={6.5} fill="#0a0e16" stroke={BADGE[s.badgeTone ?? 'info']} strokeWidth={1} />
@@ -277,7 +279,7 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit, compactToo
           )
         })}
 
-        {agents.map((a, i) => <AgentNode key={a.id} a={a} pos={from.agentPos(i, n)} AW={g.AW} AH={g.AH} glow={`url(#glow-${layout})`} name={d.agentNames[a.id]} selected={isSel('agent', a.id)} onClick={() => onSelect({ kind: 'agent', id: a.id })} />)}
+        {agents.map((a, i) => <AgentNode key={a.id} a={a} dense={dense} pos={from.agentPos(i, n)} AW={g.AW} AH={g.AH} glow={`url(#glow-${layout})`} name={d.agentNames[a.id]} selected={isSel('agent', a.id)} onClick={() => onSelect({ kind: 'agent', id: a.id })} />)}
 
         {settled && packets.map(pk => (
           <circle key={`${layout}-${pk.id}`} r={4.5} fill={pk.from === 'cache' && pk.to === 'client' ? '#4ade80' : pk.to.startsWith('agent:') || pk.from.startsWith('agent:') ? '#a78bfa' : '#5eead4'} filter={`url(#glow-${layout})`}>
@@ -310,7 +312,7 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit, compactToo
   )
 }
 
-function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick }: { a: AgentBox; pos: { x: number; y: number }; AW: number; AH: number; glow: string; name: string; selected: boolean; onClick: () => void }) {
+function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick, dense }: { a: AgentBox; pos: { x: number; y: number }; AW: number; AH: number; dense?: boolean; glow: string; name: string; selected: boolean; onClick: () => void }) {
   const active = a.status === 'active'
   const sub = active ? (a.label ?? '…') : `${a.ms ?? 0}ms${a.summary ? ' · ' + a.summary : ''}`
   return (
@@ -319,9 +321,9 @@ function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick }: { a: Agent
       onClick={onClick} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}>
       {selected && <rect x={-AW / 2 - 4} y={-AH / 2 - 4} width={AW + 8} height={AH + 8} rx={9} fill="none" stroke="#e5e9f0" strokeWidth={1} strokeDasharray="3 3" />}
       <rect x={-AW / 2} y={-AH / 2} width={AW} height={AH} rx={6} fill="#0f1520" stroke={active ? '#a78bfa' : '#4c3f7a'} strokeWidth={active ? 1.8 : 1.2} filter={active ? glow : undefined} />
-      <g transform={`translate(${-AW / 2 + 13} -5)`}><g className={active ? 'icon-pulse' : undefined}><Bot x={-6} y={-6} width={12} height={12} color={AGENT_DOT[a.id]} strokeWidth={2.2} /></g></g>
-      <text x={-AW / 2 + 22} y={-1} fontSize={9.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill="#f1f5f9">{name}{a.parallel ? ' ∥' : ''}</text>
-      <text x={-AW / 2 + 11} y={11} fontSize={7} fontFamily="JetBrains Mono, monospace" fill={active ? '#a78bfa' : '#6b7890'}>{sub.length > 27 ? sub.slice(0, 26) + '…' : sub}</text>
+      <g transform={`translate(${-AW / 2 + 13} ${dense ? 0 : -5})`}><g className={active ? 'icon-pulse' : undefined}><Bot x={-6} y={-6} width={12} height={12} color={AGENT_DOT[a.id]} strokeWidth={2.2} /></g></g>
+      <text x={-AW / 2 + 22} y={dense ? 3 : -1} fontSize={9.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill="#f1f5f9">{name}{a.parallel ? ' ∥' : ''}</text>
+      {!dense && <text x={-AW / 2 + 11} y={11} fontSize={7} fontFamily="JetBrains Mono, monospace" fill={active ? '#a78bfa' : '#6b7890'}>{sub.length > 27 ? sub.slice(0, 26) + '…' : sub}</text>}
     </motion.g>
   )
 }

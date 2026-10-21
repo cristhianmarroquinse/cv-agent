@@ -1,0 +1,27 @@
+{
+  "name": "@cv-agent/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "start": "bun --env-file=../../.env src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "calibrate-verifier": "bun --env-file=../../.env src/evals/calibrate-verifier.ts",
+    "bakeoff": "bun --env-file=../../.env src/evals/bakeoff.ts"
+  },
+  "dependencies": {
+    "@cv-agent/shared": "workspace:*",
+    "@huggingface/transformers": "^3.5.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "hono": "^4.7.0",
+    "mammoth": "1.8.0",
+    "pdf-lib": "1.17.1",
+    "unpdf": "0.12.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.6.0"
+  }
+}

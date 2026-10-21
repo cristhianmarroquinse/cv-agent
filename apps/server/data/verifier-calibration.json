@@ -1,0 +1,167 @@
+{
+  "at": 1792616477908,
+  "model": "anthropic/claude-haiku-5.5",
+  "cases": 12,
+  "planted": 20,
+  "tp": 20,
+  "fp": 2,
+  "fn": 0,
+  "precision": 0.9090909090909091,
+  "recall": 1,
+  "details": [
+    {
+      "id": "clean-walmart",
+      "flagged": [],
+      "expected": [],
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "wrong-vendor",
+      "flagged": [
+        "The seller onboarding chatbot used Rasa",
+        "The seller onboarding chatbot used Twilio",
+        "The HR assistant used Pinecone as the vector database"
+      ],
+      "expected": [
+        "Rasa",
+        "Twilio",
+        "Pinecone"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "wrong-number",
+      "flagged": [
+        "The chatbot drove 300% growth in registered sellers in 2023",
+        "The chatbot handled 2 million conversations"
+      ],
+      "expected": [
+        "300%",
+        "2 million"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "scope-shift",
+      "flagged": [
+        "At AiKit, the Anthropic rolling cache was applied across all models of every provider",
+        "The gateway supports Mistral",
+        "The gateway supports Cohere"
+      ],
+      "expected": [
+        "all models",
+        "Mistral",
+        "Cohere"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "stack-misattribution",
+      "flagged": [
+        "At AiKit the backend is NestJS",
+        "AiKit front end is Next.js",
+        "AiKit is deployed on Kubernetes"
+      ],
+      "expected": [
+        "NestJS",
+        "Next.js",
+        "Kubernetes"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "clean-aikit",
+      "flagged": [],
+      "expected": [],
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "infra-invented",
+      "flagged": [
+        "He has deployed to AWS ECS",
+        "He holds the AWS Solutions Architect certification"
+      ],
+      "expected": [
+        "ECS",
+        "Solutions Architect",
+        "certification"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "language-level",
+      "flagged": [
+        "Cristhian speaks English at C1 level",
+        "Cristhian has conversational Portuguese"
+      ],
+      "expected": [
+        "C1",
+        "Portuguese"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "education-invented",
+      "flagged": [
+        "He holds a master's degree in Machine Learning",
+        "The master's degree is from Stanford"
+      ],
+      "expected": [
+        "Stanford",
+        "master"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "id": "clean-smartcoach",
+      "flagged": [
+        "SmartCoach has about 8,600 automated tests across API and PWA"
+      ],
+      "expected": [],
+      "tp": 0,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "id": "traction-invented",
+      "flagged": [
+        "SmartCoach has 12,000 active users",
+        "SmartCoach has $4k MRR",
+        "Cristhian moved SmartCoach to DeepSeek V4 Flash at 87% lower cost"
+      ],
+      "expected": [
+        "12,000",
+        "4k"
+      ],
+      "tp": 2,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "id": "negation-neutral",
+      "flagged": [],
+      "expected": [],
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    }
+  ]
+}

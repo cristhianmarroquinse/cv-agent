@@ -34,7 +34,7 @@ interface Geometry {
 
 function columnGeometry(dense = false): Geometry {
   // dense: one-line boxes (icon + name) for the workspace sidebar; detail lives in the card
-  const W = dense ? 112 : 128, H = dense ? 28 : 40, X = 90, Y0 = dense ? 26 : 34, STEP = dense ? 46 : 64, AW = dense ? 112 : 124, AH = dense ? 26 : 34, AX = 272, ASTEP = dense ? 32 : 40, BUS_X = 186
+  const W = dense ? 112 : 128, H = dense ? 28 : 40, X = 90, Y0 = dense ? 26 : 34, STEP = dense ? 54 : 64, AW = dense ? 96 : 124, AH = dense ? 26 : 34, AX = dense ? 258 : 272, ASTEP = dense ? 34 : 40, BUS_X = 186
   const LANE_CACHE = 10, LANE_STREAM = 18, LANE_TOOLS = 164, LANE_RETRIEVAL = 172
   const pos = Object.fromEntries(ORDER.map((id, i) => [id, { x: X, y: Y0 + i * STEP }])) as Record<NodeId, { x: number; y: number }>
   const L = X - W / 2, R = X + W / 2
@@ -59,7 +59,8 @@ function columnGeometry(dense = false): Geometry {
     const { y } = agentPos(i)
     return back ? `M${AX - AW / 2} ${y} H${BUS_X} V${pos.llm.y} H${R}` : `M${R} ${pos.llm.y} H${BUS_X} V${y} H${AX - AW / 2}`
   }
-  const baseH = Y0 + (ORDER.length - 1) * STEP + H / 2 + 8
+  // room under the last box for its badge
+  const baseH = Y0 + (ORDER.length - 1) * STEP + H / 2 + (dense ? 26 : 8)
   return {
     view: { w: 340, h: baseH }, W, H, AW, AH, pos, edges, agentPos, agentPath,
     agentsLabel: () => ({ x: AX, y: agentPos(0).y - AH / 2 - 6 }),

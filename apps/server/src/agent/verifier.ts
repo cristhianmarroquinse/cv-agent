@@ -59,7 +59,7 @@ export function extractTerms(text: string): string[] {
   return [...out].filter(t => t.length >= 2)
 }
 
-const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9%$€#.]+/g, ' ').replace(/\.(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim()
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/(\d)\.(\d)/g, '$1<dot>$2').replace(/[^a-z0-9%$€#<>]+/g, ' ').replace(/<dot>/g, '.').replace(/\s+/g, ' ').trim()
 const hasWord = (h: string, w: string) => (' ' + h + ' ').includes(' ' + w + ' ')
 export function present(term: string, haystack: string): boolean {
   const t = norm(term), h = haystack

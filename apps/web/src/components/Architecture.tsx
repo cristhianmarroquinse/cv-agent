@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { AgentId, NodeId } from '@cv-agent/shared'
 import { TOOL_NAMES } from '@cv-agent/shared'
-import { ChevronDown, ChevronUp, Gauge, ScrollText, Maximize2, Minimize2, Brain, ArrowDown, X as XIcon } from 'lucide-react'
+import { ChevronDown, ChevronUp, Gauge, ScrollText, Maximize2, Minimize2, Brain, ArrowDown, Bot, MonitorSmartphone, ShieldCheck, Zap, Binary, Database, Sparkles, Wrench, LayoutPanelTop, X as XIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Phases } from './Chat.tsx'
 import { infoFor, type Selection } from '../lib/info.ts'
@@ -15,6 +15,7 @@ type Layout = 'column' | 'wide'
 const ORDER: NodeId[] = ['client', 'gateway', 'cache', 'embedder', 'vectorstore', 'llm', 'tools', 'artifacts']
 const DOT: Record<NodeId, string> = { client: '#fb923c', gateway: '#60a5fa', cache: '#fbbf24', embedder: '#a78bfa', vectorstore: '#60a5fa', llm: '#4ade80', tools: '#5eead4', artifacts: '#f472b6' }
 const AGENT_DOT: Record<AgentId, string> = { planner: '#fbbf24', experience: '#60a5fa', projects: '#f472b6', skills: '#a78bfa', synthesizer: '#4ade80', verifier: '#5eead4', reader: '#fb923c', suggester: '#60a5fa', extractor: '#fbbf24', matcher: '#60a5fa', writer: '#4ade80' }
+const NODE_ICON: Record<NodeId, typeof Bot> = { client: MonitorSmartphone, gateway: ShieldCheck, cache: Zap, embedder: Binary, vectorstore: Database, llm: Sparkles, tools: Wrench, artifacts: LayoutPanelTop }
 const BORDER: Record<string, string> = { idle: '#263247', active: '#5eead4', done: '#2f6f62', error: '#f87171' }
 const BADGE: Record<string, string> = { ok: '#4ade80', warn: '#fbbf24', info: '#a78bfa' }
 const SPRING = { type: 'spring', stiffness: 170, damping: 24 } as const
@@ -254,8 +255,8 @@ export function Diagram({ layout, selected, onSelect, maxHeight }: { layout: Lay
               onClick={() => onSelect({ kind: 'node', id })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect({ kind: 'node', id }) } }}>
               {isSel('node', id) && <rect x={-W / 2 - 4} y={-H / 2 - 4} width={W + 8} height={H + 8} rx={10} fill="none" stroke="#e5e9f0" strokeWidth={1} strokeDasharray="3 3" />}
               <rect x={-W / 2} y={-H / 2} width={W} height={H} rx={7} fill="#0f1520" stroke={BORDER[s.status]} strokeWidth={s.status === 'active' ? 1.8 : 1.2} filter={s.status === 'active' ? `url(#glow-${layout})` : undefined} />
-              <circle cx={-W / 2 + 13} cy={-5} r={3.2} fill={DOT[id]} opacity={s.status === 'idle' ? 0.45 : 1} className={s.status === 'active' ? 'dot-pulse' : undefined} />
-              <text x={-W / 2 + 22} y={-1.5} fontSize={10.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill={s.status === 'idle' ? '#aab4c5' : '#f1f5f9'}>{d.nodes[id]}</text>
+              {(() => { const Icon = NODE_ICON[id]; return <Icon x={-W / 2 + 8} y={-12} width={12} height={12} color={DOT[id]} strokeWidth={2.2} opacity={s.status === 'idle' ? 0.55 : 1} className={s.status === 'active' ? 'dot-pulse' : undefined} /> })()}
+              <text x={-W / 2 + 24} y={-1.5} fontSize={10.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill={s.status === 'idle' ? '#aab4c5' : '#f1f5f9'}>{d.nodes[id]}</text>
               <text x={-W / 2 + 13} y={13} fontSize={7.5} fontFamily="JetBrains Mono, monospace" fill={s.status === 'active' ? '#5eead4' : '#6b7890'}>{sub.length > 24 ? sub.slice(0, 23) + '…' : sub}</text>
               {s.badge && (
                 <g>
@@ -303,8 +304,8 @@ function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick }: { a: Agent
       onClick={onClick} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}>
       {selected && <rect x={-AW / 2 - 4} y={-AH / 2 - 4} width={AW + 8} height={AH + 8} rx={9} fill="none" stroke="#e5e9f0" strokeWidth={1} strokeDasharray="3 3" />}
       <rect x={-AW / 2} y={-AH / 2} width={AW} height={AH} rx={6} fill="#0f1520" stroke={active ? '#a78bfa' : '#4c3f7a'} strokeWidth={active ? 1.8 : 1.2} filter={active ? glow : undefined} />
-      <circle cx={-AW / 2 + 11} cy={-4} r={3} fill={AGENT_DOT[a.id]} className={active ? 'dot-pulse' : undefined} />
-      <text x={-AW / 2 + 19} y={-1} fontSize={9.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill="#f1f5f9">{name}{a.parallel ? ' ∥' : ''}</text>
+      <Bot x={-AW / 2 + 7} y={-11} width={12} height={12} color={AGENT_DOT[a.id]} strokeWidth={2.2} className={active ? 'dot-pulse' : undefined} />
+      <text x={-AW / 2 + 22} y={-1} fontSize={9.5} fontFamily="JetBrains Mono, monospace" fontWeight={500} fill="#f1f5f9">{name}{a.parallel ? ' ∥' : ''}</text>
       <text x={-AW / 2 + 11} y={11} fontSize={7} fontFamily="JetBrains Mono, monospace" fill={active ? '#a78bfa' : '#6b7890'}>{sub.length > 27 ? sub.slice(0, 26) + '…' : sub}</text>
     </motion.g>
   )

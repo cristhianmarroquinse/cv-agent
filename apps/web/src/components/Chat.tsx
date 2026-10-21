@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { AnimatePresence, motion } from 'motion/react'
-import { Send, Database, Cpu, Wrench, Zap, Clock, Coins, Check, Loader2, Brain, ShieldCheck, ShieldAlert, ClipboardList, Users, MessageSquare, MousePointerClick, ArrowDown, ArrowUp, Paperclip, FileText, Sparkles, X as XIcon } from 'lucide-react'
+import { Send, Database, Cpu, Wrench, Zap, Clock, Coins, Check, Loader2, Brain, ShieldCheck, ShieldAlert, ClipboardList, Users, MessageSquare, MousePointerClick, ArrowDown, ArrowUp, Paperclip, FileText, Sparkles, Bot, ChevronDown, X as XIcon } from 'lucide-react'
 import type { Attachment } from '@cv-agent/shared'
 import { ArtifactCard } from './Artifacts.tsx'
 
@@ -50,7 +50,7 @@ export function Chat() {
 
 /** Suggestion chips + job-fit toggle + growing textarea. Shared by the chat column and the home screen. */
 export function Composer({ onSent, home }: { onSent?: () => void; home?: boolean }) {
-  const { send, sending, lang, messages, followups } = useStore()
+  const { send, sending, lang, messages, followups, models, model, setModel, reasoning, setReasoning, useCache, setUseCache } = useStore()
   const d = t(lang)
   // Progressive suggestions: three fixed openers, then the suggester agent's follow-ups topped up with the curated list.
   const asked = new Set(messages.filter(m => m.role === 'user').map(m => m.content.trim().toLowerCase()))
@@ -127,7 +127,22 @@ export function Composer({ onSent, home }: { onSent?: () => void; home?: boolean
             className={`h-8 w-8 rounded-full border grid place-items-center transition-colors ${file ? 'border-accent-2 text-accent-2 bg-accent-2/10' : 'border-line text-muted hover:text-text hover:bg-panel'}`}>
             <Paperclip size={14} />
           </button>
-          <span className="hidden sm:inline text-[10.5px] font-mono text-muted/60 ml-1">{jobfit ? d.sendHintJobfit : d.sendHint}</span>
+          <label className="relative" title={d.model}>
+            <select value={model} onChange={e => setModel(e.target.value)} aria-label={d.model}
+              className="appearance-none h-8 max-w-[220px] bg-transparent border border-line rounded-full pl-2.5 pr-6 text-[11px] font-mono text-muted hover:text-text hover:bg-panel focus:outline-none truncate">
+              {models.map(m => <option key={m.id} value={m.id}>{m.label} · ${m.inputPerM.toFixed(2)}/${m.outputPerM.toFixed(2)}</option>)}
+            </select>
+            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted" />
+          </label>
+          <button onClick={() => setReasoning(!reasoning)} title={d.reasoningHint} aria-pressed={reasoning}
+            className={`h-8 flex items-center gap-1 rounded-full border px-2.5 text-[11px] font-mono transition-colors ${reasoning ? 'border-accent-2 text-accent-2 bg-accent-2/10' : 'border-line text-muted hover:text-text hover:bg-panel'}`}>
+            <Brain size={12} /> <span className="hidden sm:inline">{d.reasoning}</span>
+          </button>
+          <button onClick={() => setUseCache(!useCache)} title={d.cacheHint} aria-pressed={useCache}
+            className={`h-8 flex items-center gap-1 rounded-full border px-2.5 text-[11px] font-mono transition-colors ${useCache ? 'border-warn/70 text-warn bg-warn/10' : 'border-line text-muted hover:text-text hover:bg-panel'}`}>
+            <Zap size={12} /> <span className="hidden sm:inline">{d.cacheSwitch}</span>
+          </button>
+          <span className="hidden xl:inline text-[10.5px] font-mono text-muted/60 ml-1 truncate">{jobfit ? d.sendHintJobfit : d.sendHint}</span>
           <button onClick={submit} disabled={sending || (!text.trim() && !(jobfit && file))} aria-label={d.send} title={d.send}
             className="ml-auto h-9 w-9 rounded-full bg-accent text-bg grid place-items-center disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
             {sending ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={17} strokeWidth={2.5} />}
@@ -183,7 +198,8 @@ function Bubble({ m }: { m: Msg }) {
   const offline = !!m.error && (/Failed to fetch|NetworkError|Load failed/i.test(m.error) || /^HTTP 5\d\d$/.test(m.error))
   const errorText = offline ? d.apiDown : m.error
   return (
-    <div className="flex justify-start">
+    <div className="flex justify-start items-start gap-2">
+      <span className="mt-1 h-7 w-7 shrink-0 rounded-full bg-accent/15 text-accent grid place-items-center" aria-hidden="true"><Bot size={15} /></span>
       <div className={`${m.artifactIds.length ? 'w-full' : 'max-w-[94%]'} min-w-[260px] rounded-2xl rounded-bl-sm bg-panel border border-line px-3.5 py-2.5 text-sm`}>
         {streaming ? <Phases phases={m.phases} /> : m.phases.length > 0 && (
           <details className="mb-1.5">

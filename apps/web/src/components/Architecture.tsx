@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { AgentId, NodeId } from '@cv-agent/shared'
 import { TOOL_NAMES } from '@cv-agent/shared'
-import { ChevronDown, ChevronUp, Gauge, ScrollText, Maximize2, Minimize2, Brain, ArrowDown, Bot, MonitorSmartphone, ShieldCheck, Zap, Binary, Database, Sparkles, Wrench, LayoutPanelTop, X as XIcon } from 'lucide-react'
+import { ChevronDown, ChevronUp, Gauge, ScrollText, Maximize2, Minimize2, Brain, ArrowDown, Bot, Loader2, Check, MonitorSmartphone, ShieldCheck, Zap, Binary, Database, Sparkles, Wrench, LayoutPanelTop, X as XIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Phases } from './Chat.tsx'
 import { infoFor, type Selection } from '../lib/info.ts'
@@ -182,7 +182,7 @@ export function Architecture() {
             </div>
             <div className={`flex-1 min-h-0 overflow-auto flex flex-col items-center gap-4 p-4 sm:p-6 ${auto ? 'justify-start' : 'justify-center'}`}>
               <motion.div initial={{ opacity: 0, scale: 0.92, x: -120 }} animate={{ opacity: 1, scale: 1, x: 0 }} transition={SPRING} className={roomy ? 'w-full max-w-[1500px]' : 'w-full max-w-[420px]'}>
-                <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} maxHeight={auto ? 'max(220px, calc(66dvh - 170px))' : undefined} />
+                <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} maxHeight={auto ? 'max(220px, calc(100dvh - 340px))' : undefined} />
               </motion.div>
               {auto ? <StagePanel /> : <p className="text-[11px] text-muted">{d.clickHint} · {d.escHint}</p>}
               {showTrace && <div className="w-full max-w-[1280px]">{traceView}</div>}
@@ -357,8 +357,35 @@ export function StagePanel() {
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight }, [m?.content, m?.reasoning])
   if (!m) return null
+  const [expanded, setExpanded] = useState(false)
+  const current = m.phases.find(p => !p.done) ?? m.phases[m.phases.length - 1]
+  const phaseLabel = current ? (d.phases[current.key] as (x: string) => string)(current.detail ?? '') : ''
+  const tail = (m.content || m.reasoning || '').replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').trim().slice(-220)
+  if (!expanded) return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: 0.2 }} className="w-full max-w-[1500px] shrink-0 space-y-1.5">
+      {question && (
+        <div className="flex justify-end">
+          <div className="max-w-[70%] truncate rounded-full bg-accent/15 border border-accent/30 px-3 py-1 text-xs">{question.kind === 'jobfit' ? `${d.jobfitLabel} · ${question.fileName ?? `${question.content.length} chars`}` : question.content}</div>
+        </div>
+      )}
+      {/* One-line ticker: the current step on the left, the tail of the streamed answer on the right, always anchored to the newest text. */}
+      <div className="flex items-center gap-3 h-11 rounded-xl border border-line bg-panel/85 px-3">
+        <span className="flex items-center gap-2 shrink-0 max-w-[42%] font-mono text-[11px] text-accent truncate">
+          {current && !current.done ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Check size={12} className="text-ok shrink-0" />}
+          <span className="truncate">{phaseLabel}</span>
+        </span>
+        <span className="h-5 w-px bg-line shrink-0" />
+        <div className="relative flex-1 min-w-0 overflow-hidden">
+          <div className="whitespace-nowrap text-sm text-text/90 text-right">{tail || '…'}</div>
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-panel to-transparent" />
+        </div>
+        <button onClick={() => setExpanded(true)} title={d.maximize} aria-label={d.maximize} className="shrink-0 rounded-md p-1.5 text-muted hover:text-text hover:bg-panel-2"><Maximize2 size={14} /></button>
+      </div>
+    </motion.div>
+  )
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: 0.35 }} className='w-full max-w-[1500px] shrink-0 space-y-2.5'>
+      <div className="flex justify-end"><button onClick={() => setExpanded(false)} title={d.collapse} aria-label={d.collapse} className="rounded-md p-1.5 text-muted hover:text-text hover:bg-panel-2"><Minimize2 size={14} /></button></div>
       {question && (
         <div className='flex justify-end'>
           <div className='max-w-[80%] rounded-2xl rounded-br-sm bg-accent/15 border border-accent/30 px-3.5 py-2 text-sm'>

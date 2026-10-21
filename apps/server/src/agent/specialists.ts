@@ -40,7 +40,7 @@ export async function runSpecialist(domain: Domain, model: string, question: str
     emit({ type: 'tool.start', id: call.id, name: call.function.name, args })
     const t1 = performance.now()
     const out = await executeTool(call.function.name, args)
-    emit({ type: 'tool.result', id: call.id, name: call.function.name, summary: out.summary, ms: Math.round(performance.now() - t1) })
+    emit({ type: 'tool.result', id: call.id, name: call.function.name, summary: out.summary, ms: Math.round(performance.now() - t1), preview: JSON.stringify(out.result).slice(0, 320) })
     usedTools.push(call.function.name)
     const resultJson = JSON.stringify(out.result).slice(0, 4000)
     toolResults.push(resultJson)

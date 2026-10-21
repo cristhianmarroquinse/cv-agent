@@ -255,7 +255,7 @@ export async function runChat(req: ChatRequest, emit: Emit, signal: AbortSignal)
             emit({ type: 'node.exit', node: 'vectorstore', ms: 0 })
             emit({ type: 'edge', from: 'vectorstore', to: 'tools' })
           }
-          emit({ type: 'tool.result', id: call.id, name: call.name, summary: out.summary, ms: Math.round(performance.now() - t1) })
+          emit({ type: 'tool.result', id: call.id, name: call.name, summary: out.summary, ms: Math.round(performance.now() - t1), preview: JSON.stringify(out.result).slice(0, 320) })
           const resultJson = JSON.stringify(out.result).slice(0, 6000)
           evidence.push(resultJson)
           if (out.artifact) {

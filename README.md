@@ -76,6 +76,7 @@ Two passes. A deterministic term check extracts named entities, technologies and
 - **Model selector**: curated cheap, tool-capable models on OpenRouter with live prices; per-message cost under each answer.
 - **Reasoning** toggle: sends `reasoning: { effort: "low" }` to OpenRouter and streams the model's reasoning (`delta.reasoning`) into the chat; `reasoning_details` are echoed back on tool-call turns so Anthropic models keep thinking across steps. Off by default (tokens + latency).
 - **Speed** (normal / slow): client-side pacing of pipeline events so the animation stays legible; the backend is not slowed down.
+- **Piece cards as a trace inspector**: every node, agent and tool card shows its input → output contract and, after a run, the real inputs and outputs that went through it (retrieved chunks with scores, LLM steps with tokens and cost, tool arguments and result previews, verifier claims, follow-ups). Built client-side from the same events that drive the animation.
 - **Trace**: raw event log with the server timestamp of each event (milliseconds), so latencies are real even though the animation is paced.
 - **Click any node, agent or tool** on the diagram for a card explaining what it is, what it does, how it is built and its live state (`apps/web/src/lib/info.ts`). The expand button opens the diagram full screen with the card and trace beside it.
 

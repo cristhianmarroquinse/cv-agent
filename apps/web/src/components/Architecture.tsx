@@ -328,9 +328,11 @@ function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick }: { a: Agent
 
 /** Centered modal with backdrop. Escape and click-outside close it; focus lands on the close button. */
 export function DetailModal({ selected, onClose, onSelect }: { selected: Selection | null; onClose: () => void; onSelect?: (s: Selection) => void }) {
-  const { lang, nodes, agents, tools } = useStore()
+  const { lang, nodes, agents, tools, io } = useStore()
   const d = t(lang)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const ioKey = selected ? (selected.kind === 'node' ? selected.id : `${selected.kind}:${selected.id}`) : ''
+  const rec = io[ioKey]
   useEffect(() => { if (selected) closeRef.current?.focus() }, [selected])
   const info = selected ? infoFor(lang, selected) : null
   let live: string = d.idle
@@ -355,6 +357,20 @@ export function DetailModal({ selected, onClose, onSelect }: { selected: Selecti
             <Row k={d.whatIs} v={info.what} />
             <Row k={d.roleOf} v={info.role} />
             <Row k={d.howBuilt} v={info.how} />
+            {info.io && <div><div className="text-[10px] font-mono uppercase tracking-wider text-muted mb-0.5">{d.ioContract}</div><p className="text-xs font-mono text-text/85 leading-relaxed">{info.io}</p></div>}
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">{d.lastRun}</div>
+              {rec && (rec.input.length || rec.output.length) ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {([['input', rec.input], ['output', rec.output]] as const).map(([side, lines]) => (
+                    <div key={side} className="rounded-md border border-line bg-bg/60 p-2 min-w-0">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-accent mb-1">{side === 'input' ? d.input : d.output}</div>
+                      {lines.length ? <ul className="space-y-0.5">{lines.map((l, i) => <li key={i} className="text-[11px] font-mono text-text/80 break-words">{l}</li>)}</ul> : <p className="text-[11px] font-mono text-muted">—</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-muted">{d.noRun}</p>}
+            </div>
             {selected.kind === 'node' && selected.id === 'tools' && (
               <div><div className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">{d.toolsAvailable}</div>
                 <div className="flex flex-wrap gap-1.5">{TOOL_NAMES.map(n => <button key={n} onClick={() => onSelect?.({ kind: 'tool', id: n })} className="text-[11px] font-mono px-2 py-1 rounded border border-line text-muted hover:text-accent hover:border-accent/60">{n}</button>)}</div>

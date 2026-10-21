@@ -124,7 +124,7 @@ export type PipelineEvent =
   | { type: 'llm.tool_calls'; calls: { id: string; name: string; args: Record<string, unknown> }[] }
   | { type: 'llm.usage'; step: number; usage: Usage }
   | { type: 'tool.start'; id: string; name: string; args: Record<string, unknown> }
-  | { type: 'tool.result'; id: string; name: string; summary: string; ms: number }
+  | { type: 'tool.result'; id: string; name: string; summary: string; ms: number; /** first characters of the raw result, for the trace inspector */ preview?: string }
   | { type: 'artifact'; artifact: Artifact }
   | { type: 'agent.start'; agent: AgentId; label?: string; parallel?: boolean }
   | { type: 'agent.progress'; agent: AgentId; label: string }

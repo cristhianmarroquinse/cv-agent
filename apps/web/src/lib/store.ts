@@ -14,6 +14,8 @@ export interface RunSummary { ms: number; steps: number; usage: Usage; fromCache
 export interface Phase { id: number; key: PhaseKey; detail?: string; done: boolean }
 export interface Verification { claims: Claim[]; supported: number; total: number }
 export interface Msg { id: string; role: 'user' | 'assistant'; kind: 'chat' | 'jobfit'; content: string; fileName?: string; artifactIds: string[]; reasoning: string; phases: Phase[]; status: 'streaming' | 'done' | 'error'; run?: RunSummary; verification?: Verification; error?: string }
+/** What went in and out of one piece during the last run (node id, `agent:<id>` or `tool:<name>`). */
+export interface IoRecord { input: string[]; output: string[] }
 export interface ToolState { available: boolean; chosen: string[]; running: string | null; used: string[] }
 export type Speed = 1 | 2
 /** Presentation mode: the architecture takes the whole screen while a message runs, then collapses back. */
@@ -57,6 +59,7 @@ interface State {
   activeEdge: { from: string; to: string } | null
   doneEdges: string[]
   tools: ToolState
+  io: Record<string, IoRecord>
   trace: TraceLine[]
   sending: boolean
   sessionCost: number
@@ -96,6 +99,7 @@ export const useStore = create<State>((set, get) => {
   // Trace lines use the server timestamp of the event being applied (falls back to now).
   let currentTs = 0
   const log = (text: string, tone?: TraceLine['tone']) => set(s => ({ trace: [...s.trace.slice(-80), { id: ++seq, ts: currentTs || Date.now(), text, tone }] }))
+  const io = (key: string, side: 'input' | 'output', line: string) => set(s => { const cur = s.io[key] ?? { input: [], output: [] }; return { io: { ...s.io, [key]: { ...cur, [side]: [...cur[side], line].slice(-12) } } } })
   const node = (id: NodeId, patch: Partial<NodeState>) => set(s => ({ nodes: { ...s.nodes, [id]: { ...s.nodes[id], ...patch } } }))
   const patchLastAssistant = (fn: (m: Msg) => Msg) => set(s => {
     const i = s.messages.map(m => m.role).lastIndexOf('assistant')
@@ -146,6 +150,7 @@ export const useStore = create<State>((set, get) => {
     activeEdge: null,
     doneEdges: [],
     tools: idleTools(),
+    io: {},
     trace: [],
     sending: false,
     sessionCost: 0,
@@ -191,8 +196,10 @@ export const useStore = create<State>((set, get) => {
       switch (e.type) {
         case 'run.start':
           acc = { tools: [], hits: [], cacheHits: [], model: e.model, agents: [] }
-          set({ nodes: idleNodes(), agents: [], packets: [], activeEdge: null, doneEdges: [], tools: idleTools() })
+          set({ nodes: idleNodes(), agents: [], packets: [], activeEdge: null, doneEdges: [], tools: idleTools(), io: {} })
           node('client', { status: 'active', label: short(e.model) })
+          io('client', 'input', `model ${e.model}`)
+          io('gateway', 'input', `POST /api/chat · ${e.model}`)
           log(`run ${e.runId} · ${e.model}`, 'info')
           break
         case 'edge':
@@ -203,34 +210,39 @@ export const useStore = create<State>((set, get) => {
           break
         case 'node.enter':
           node(e.node, { status: 'active', label: e.label })
+          if (e.node === 'gateway' && e.label) io('gateway', 'output', e.label)
           if (e.node === 'cache') phase('cache')
           if (e.node === 'embedder') phase('retrieve')
           break
         case 'node.exit': node(e.node, { status: 'done', ms: e.ms }); break
-        case 'cache.check': break
+        case 'cache.check': io('cache', 'input', `${e.scope} · key ${e.key}`); break
         case 'cache.hit':
           acc.cacheHits.push(e.scope)
           if (e.scope === 'prompt') node('llm', { badge: `${e.detail?.split(' ')[0] ?? ''} cached tok`, badgeTone: 'ok' })
           else node('cache', { badge: e.scope === 'response' && e.detail?.startsWith('semantic') ? `semantic HIT ${e.detail.split(' · ')[1] ?? ''}` : `${e.scope} HIT`, badgeTone: 'ok' })
           if (e.scope === 'response') phase('cacheHit')
+          io(e.scope === 'prompt' ? 'llm' : 'cache', 'output', `${e.scope} HIT${e.detail ? ' · ' + e.detail : ''}`)
           log(`cache HIT (${e.scope}) ${e.detail ?? ''}`, 'ok')
           break
         case 'cache.miss':
           if (e.scope === 'prompt') node('llm', { badge: 'no cached tok', badgeTone: 'warn' })
           else if (e.scope === 'response') node('cache', { badge: e.detail ? 'cache OFF' : 'response MISS', badgeTone: 'warn' })
+          io(e.scope === 'prompt' ? 'llm' : 'cache', 'output', `${e.scope} MISS${e.detail ? ' · ' + e.detail : ''}`)
           log(`cache miss (${e.scope})`, 'warn')
           break
-        case 'retrieval.query': log(`retrieve: "${e.query.slice(0, 60)}"`); break
-        case 'retrieval.embed': node('embedder', { badge: `${e.dims}d · ${e.ms}ms`, badgeTone: 'info' }); log(`embed ${e.dims}d in ${e.ms}ms (${e.backend})`); break
+        case 'retrieval.query': io('embedder', 'input', `"${e.query.slice(0, 140)}"`); io('vectorstore', 'input', `hybrid search for "${e.query.slice(0, 100)}"`); log(`retrieve: "${e.query.slice(0, 60)}"`); break
+        case 'retrieval.embed': node('embedder', { badge: `${e.dims}d · ${e.ms}ms`, badgeTone: 'info' }); io('embedder', 'output', `${e.dims}-d vector · ${e.ms} ms · ${e.backend}`); io('vectorstore', 'input', `${e.dims}-d query vector + BM25 terms`); log(`embed ${e.dims}d in ${e.ms}ms (${e.backend})`); break
         case 'retrieval.hits':
           acc.hits = e.hits
           node('vectorstore', { badge: `${e.hits.length} hits`, badgeTone: 'info' })
+          e.hits.forEach((h, i) => io('vectorstore', 'output', `${i + 1}. ${h.section.split(' › ').pop()} · ${h.method} · ${h.score}`))
           phase('hits', String(e.hits.length))
           log(`hits: ${e.hits.map(h => h.section.split(' › ').pop()).join(' · ')}`)
           break
         case 'llm.request':
           node('llm', { status: 'active', label: `${short(e.model)} · step ${e.step}`, badge: undefined })
           set(s => ({ tools: { ...s.tools, available: e.toolCount > 0, chosen: [], running: null } }))
+          io('llm', 'input', `step ${e.step} · ${e.messageCount} messages · ${e.contextChunks} chunks · ${e.toolCount} tools`)
           if (e.toolCount > 0) phase(e.step === 1 ? 'llm' : 'write', short(e.model))
           log(`llm step ${e.step}: ${e.messageCount} msgs, ${e.toolCount} tools, ${e.contextChunks} chunks`)
           break
@@ -240,27 +252,31 @@ export const useStore = create<State>((set, get) => {
         case 'llm.tool_calls': {
           const names = e.calls.map(c => c.name)
           set(s => ({ tools: { ...s.tools, chosen: names } }))
+          e.calls.forEach(c => io('llm', 'output', `tool call ${c.name}(${JSON.stringify(c.args).slice(0, 80)})`))
           phase('choose', names.join(', '))
           log(`tool calls: ${names.join(', ')}`, 'info')
           break
         }
-        case 'llm.usage': log(`usage step ${e.step}: ${e.usage.promptTokens}+${e.usage.completionTokens} tok, ${e.usage.cachedTokens} cached, $${(e.usage.costUsd ?? 0).toFixed(5)}`); break
+        case 'llm.usage': io('llm', 'output', `step ${e.step} · ${e.usage.promptTokens}+${e.usage.completionTokens} tokens · ${e.usage.cachedTokens} cached · ${(e.usage.costUsd ?? 0).toFixed(5)}`); log(`usage step ${e.step}: ${e.usage.promptTokens}+${e.usage.completionTokens} tok, ${e.usage.cachedTokens} cached, $${(e.usage.costUsd ?? 0).toFixed(5)}`); break
         case 'tool.start':
           acc.tools.push(e.name)
           node('tools', { status: 'active', label: e.name })
           set(s => ({ tools: { ...s.tools, available: true, chosen: s.tools.chosen.includes(e.name) ? s.tools.chosen : [...s.tools.chosen, e.name], running: e.name } }))
           phase('tool', e.name)
+          io('tools', 'input', `${e.name}(${JSON.stringify(e.args).slice(0, 120)})`); io(`tool:${e.name}`, 'input', JSON.stringify(e.args).slice(0, 160))
           log(`tool ${e.name}(${JSON.stringify(e.args)})`, 'info')
           break
         case 'tool.result':
           set(s => ({ tools: { ...s.tools, running: null, used: [...s.tools.used, e.name] } }))
           node('tools', { status: 'done' })
+          io('tools', 'output', `${e.name} → ${e.summary} · ${e.ms} ms`); io(`tool:${e.name}`, 'output', `${e.summary}${e.preview ? ' · ' + e.preview : ''}`)
           log(`tool ${e.name} → ${e.summary} (${e.ms}ms)`)
           break
         case 'artifact':
           set(s => ({ artifacts: [e.artifact, ...s.artifacts.filter(a => a.id !== e.artifact.id)] }))
           patchLastAssistant(m => ({ ...m, artifactIds: m.artifactIds.includes(e.artifact.id) ? m.artifactIds : [...m.artifactIds, e.artifact.id] }))
           node('artifacts', { badge: e.artifact.kind, badgeTone: 'ok' })
+          io('artifacts', 'input', `${e.artifact.kind} result from a tool`); io('artifacts', 'output', `${e.artifact.kind} card "${e.artifact.title}"`)
           phase('artifact', e.artifact.kind)
           log(`artifact: ${e.artifact.kind} "${e.artifact.title}"`, 'ok')
           break
@@ -268,6 +284,7 @@ export const useStore = create<State>((set, get) => {
           acc.agents.push(e.agent)
           set(s => ({ agents: s.agents.some(a => a.id === e.agent) ? s.agents.map(a => a.id === e.agent ? { ...a, status: 'active' as const, label: e.label } : a) : [...s.agents, { id: e.agent, label: e.label, status: 'active' as const, parallel: e.parallel }] }))
           node('llm', { status: 'active' })
+          io(`agent:${e.agent}`, 'input', e.label ?? 'start')
           packet('llm', `agent:${e.agent}`)
           if (e.agent === 'synthesizer') phase('synth')
           else if (e.agent === 'verifier') phase('verify')
@@ -291,6 +308,7 @@ export const useStore = create<State>((set, get) => {
           break
         case 'agent.end':
           set(s => ({ agents: s.agents.map(a => a.id === e.agent ? { ...a, status: 'done' as const, summary: e.summary, ms: e.ms } : a) }))
+          io(`agent:${e.agent}`, 'output', `${e.summary ?? 'done'} · ${e.ms} ms`)
           packet(`agent:${e.agent}`, 'llm')
           log(`agent ${e.agent} done in ${e.ms}ms ${e.summary ? '· ' + e.summary : ''}`, 'ok')
           break
@@ -300,10 +318,12 @@ export const useStore = create<State>((set, get) => {
           break
         case 'suggestions':
           set({ followups: e.items })
+          e.items.forEach(x => io('agent:suggester', 'output', x))
           log(`follow-ups: ${e.items.join(' · ')}`, 'info')
           break
         case 'verification':
           patchLastAssistant(m => ({ ...m, verification: { claims: e.claims, supported: e.supported, total: e.total } }))
+          e.claims.forEach(c => io('agent:verifier', 'output', `${c.supported ? '✓' : '✗'} ${c.text}`))
           phase('verified', `${e.supported}/${e.total}`)
           log(`verification: ${e.supported}/${e.total} grounded`, e.supported === e.total ? 'ok' : 'warn')
           break
@@ -312,6 +332,8 @@ export const useStore = create<State>((set, get) => {
           finishPhases()
           patchLastAssistant(m => ({ ...m, status: 'done', run }))
           node('client', { status: 'done', label: e.fromCache ? 'cached' : `${e.ms}ms` })
+          io('client', 'output', `${e.ms} ms · ${e.steps} steps · ${(e.usage.costUsd ?? 0).toFixed(5)}${e.fromCache ? ' · from cache' : ''}`)
+          { const last = get().messages[get().messages.length - 1]; if (last?.content) io('llm', 'output', `text: ${last.content.replace(/\s+/g, ' ').slice(0, 160)}…`) }
           // Nothing is working any more: settle every box that is still lit.
           set(s => ({ nodes: Object.fromEntries(Object.entries(s.nodes).map(([k, v]) => [k, v.status === 'active' ? { ...v, status: 'done' } : v])) as typeof s.nodes }))
           set(s => ({ sending: false, sessionCost: s.sessionCost + (e.usage.costUsd ?? 0), tools: { ...s.tools, available: false, running: null } }))

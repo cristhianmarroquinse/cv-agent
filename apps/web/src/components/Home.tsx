@@ -56,7 +56,7 @@ export function Home() {
         {/* The diagram takes the free height; the composer (or the live stage) stays at the bottom. */}
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 170, damping: 24, delay: 0.1 }}
           className={`mx-auto ${roomy ? 'flex-1 min-h-0 w-full max-w-[1900px] overflow-hidden flex flex-col' : 'my-auto w-full max-w-[420px]'}`}>
-          <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} fit={roomy} compactTools={short} />
+          <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} fit={roomy} compactTools={short && !running} />
         </motion.div>
 
         {running ? (

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { AgentId, Artifact, Attachment, ChatMessage, Claim, ModelInfo, NodeId, PipelineEvent, RetrievalHit, Usage } from '@cv-agent/shared'
 import { DEFAULT_MODEL } from '@cv-agent/shared'
 import { streamChat } from './sse.ts'
-import { detectLang, type Lang, type PhaseKey } from './i18n.ts'
+import { detectLang, t, type Lang, type PhaseKey } from './i18n.ts'
 
 export type NodeStatus = 'idle' | 'active' | 'done' | 'error'
 export interface NodeState { status: NodeStatus; label?: string; badge?: string; badgeTone?: 'ok' | 'warn' | 'info'; ms?: number }
@@ -82,19 +82,22 @@ let seq = 0
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 export const useStore = create<State>((set, get) => {
-  const queue: PipelineEvent[] = []
+  const queue: (PipelineEvent | (() => void))[] = []
   let draining = false
   const drain = async () => {
     draining = true
     while (queue.length) {
       const e = queue.shift()!
+      if (typeof e === 'function') { e(); continue }
       get().applyEvent(e)
       const base = PACE[e.type] ?? 0
       if (base) await sleep(base * get().speed)
     }
     draining = false
   }
-  const enqueue = (e: PipelineEvent) => { queue.push(e); if (!draining) void drain() }
+  const enqueue = (e: PipelineEvent | (() => void)) => { queue.push(e); if (!draining) void drain() }
+  /** If the stream ends (or goes silent) without run.end, fail the message instead of hanging the UI. */
+  const failIfStillStreaming = () => { const last = get().messages[get().messages.length - 1]; if (last?.role === 'assistant' && last.status === 'streaming') get().applyEvent({ type: 'error', message: t(get().lang).streamClosed }) }
 
   // Trace lines use the server timestamp of the event being applied (falls back to now).
   let currentTs = 0
@@ -183,10 +186,16 @@ export const useStore = create<State>((set, get) => {
           { id: `a${++seq}`, role: 'assistant', kind: mode, content: '', artifactIds: [], reasoning: '', phases: [], status: 'streaming' }],
         followups: [],
       }))
+      let watchdog: ReturnType<typeof setTimeout> | undefined
+      const arm = () => { clearTimeout(watchdog); watchdog = setTimeout(() => enqueue(failIfStillStreaming), 40_000) }
       try {
-        for await (const e of streamChat({ model: get().model, reasoning: get().reasoning, mode, attachment, lang: get().lang, sessionId: SESSION_ID, noCache: !get().useCache, messages: [...history, { role: 'user', content }] })) enqueue(e)
+        arm()
+        for await (const e of streamChat({ model: get().model, reasoning: get().reasoning, mode, attachment, lang: get().lang, sessionId: SESSION_ID, noCache: !get().useCache, messages: [...history, { role: 'user', content }] })) { enqueue(e); arm() }
       } catch (err) {
         enqueue({ type: 'error', message: (err as Error).message })
+      } finally {
+        clearTimeout(watchdog)
+        enqueue(failIfStillStreaming)
       }
     },
 

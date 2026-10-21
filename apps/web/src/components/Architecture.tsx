@@ -415,7 +415,7 @@ export function StagePanel() {
         </span>
         <span className="h-5 w-px bg-line shrink-0" />
         <div className="relative flex-1 min-w-0 overflow-hidden">
-          <div className="whitespace-nowrap text-sm text-text/90 text-right">{tail || '…'}</div>
+          <div className={`whitespace-nowrap text-sm text-right ${m.status === 'error' ? 'text-err' : 'text-text/90'}`}>{m.status === 'error' ? `${d.error}: ${m.error}` : (tail || '…')}</div>
           <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-panel to-transparent" />
         </div>
         <button onClick={() => setExpanded(true)} title={d.maximize} aria-label={d.maximize} className="shrink-0 rounded-md p-1.5 text-muted hover:text-text hover:bg-panel-2"><Maximize2 size={14} /></button>

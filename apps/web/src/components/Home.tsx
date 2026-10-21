@@ -54,8 +54,8 @@ export function Home() {
       <main className="flex-1 min-h-0 overflow-y-auto flex flex-col px-4 sm:px-8 pt-4 pb-5">
         {/* The diagram takes the free height; the composer (or the live stage) stays at the bottom. */}
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 170, damping: 24, delay: 0.1 }}
-          className={`my-auto mx-auto ${roomy ? 'w-full max-w-[1900px]' : 'w-full max-w-[420px]'}`}>
-          <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} maxHeight={running ? 'max(220px, calc(100dvh - 360px))' : 'max(240px, calc(100dvh - 330px))'} />
+          className={`mx-auto ${roomy ? 'flex-1 min-h-0 w-full max-w-[1900px] overflow-hidden flex flex-col' : 'my-auto w-full max-w-[420px]'}`}>
+          <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} fit={roomy} />
         </motion.div>
 
         {running ? (
@@ -63,8 +63,8 @@ export function Home() {
         ) : (
           <div className="mt-auto pt-8 w-full max-w-3xl mx-auto space-y-2">
             <div className="text-center space-y-1 pb-2">
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">{d.homeTitle}</h2>
-              <p className="text-sm sm:text-base text-muted max-w-2xl mx-auto">{d.homeLead}</p>
+              <h2 className="text-2xl sm:text-3xl [@media(max-height:760px)]:text-xl font-bold tracking-tight">{d.homeTitle}</h2>
+              <p className="text-sm sm:text-base text-muted max-w-2xl mx-auto [@media(max-height:760px)]:hidden">{d.homeLead}</p>
             </div>
             <p className="text-center text-[11px] font-mono uppercase tracking-[0.18em] text-muted">{d.homeCta}</p>
             <Composer home />

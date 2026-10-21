@@ -196,7 +196,7 @@ export function Architecture() {
   )
 }
 
-export function Diagram({ layout, selected, onSelect, maxHeight }: { layout: Layout; selected: Selection | null; onSelect: (s: Selection) => void; maxHeight?: string }) {
+export function Diagram({ layout, selected, onSelect, maxHeight, fit }: { layout: Layout; selected: Selection | null; onSelect: (s: Selection) => void; maxHeight?: string; /** fill the parent's height: the SVG scales to fit both width and height */ fit?: boolean }) {
   const { nodes, agents, packets, activeEdge, doneEdges, tools, lang, speed } = useStore()
   const d = t(lang)
   const g = GEO[layout]
@@ -219,8 +219,8 @@ export function Diagram({ layout, selected, onSelect, maxHeight }: { layout: Lay
   const label = useMemo(() => g.agentsLabel(Math.max(n, 1)), [g, n])
 
   return (
-    <div className={wide ? 'w-full' : ''}>
-      <svg viewBox={`0 0 ${g.view.w} ${viewH}`} className="w-full h-auto select-none" style={wide ? { maxHeight: maxHeight ?? 'calc(100dvh - 190px)' } : undefined} aria-hidden="false">
+    <div className={`${wide ? 'w-full' : ''} ${fit ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+      <svg viewBox={`0 0 ${g.view.w} ${viewH}`} preserveAspectRatio="xMidYMid meet" className={fit ? 'block flex-1 min-h-0 w-full select-none' : 'w-full h-auto select-none'} style={fit ? { width: '100%', height: '100%', minHeight: 0, flex: '1 1 0px' } : wide ? { maxHeight: maxHeight ?? 'calc(100dvh - 190px)' } : undefined} aria-hidden="false">
         <defs>
           <filter id={`glow-${layout}`}><feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>

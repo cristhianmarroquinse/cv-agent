@@ -117,6 +117,18 @@ export function useRoomy() {
   return roomy
 }
 
+/** True when the viewport is short: the home trades the tools row and the title block for diagram height. */
+export function useShortHeight(px = 900) {
+  const [short, setShort] = useState(() => window.matchMedia(`(max-height: ${px}px)`).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-height: ${px}px)`)
+    const on = () => setShort(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [px])
+  return short
+}
+
 export function Architecture() {
   const { lang, speed, setSpeed, trace, stage, closeStage } = useStore()
   const d = t(lang)
@@ -191,12 +203,12 @@ export function Architecture() {
         )}
       </AnimatePresence>
 
-      <DetailModal selected={selected} onClose={() => setSelected(null)} />
+      <DetailModal selected={selected} onClose={() => setSelected(null)} onSelect={setSelected} />
     </>
   )
 }
 
-export function Diagram({ layout, selected, onSelect, maxHeight, fit }: { layout: Layout; selected: Selection | null; onSelect: (s: Selection) => void; maxHeight?: string; /** fill the parent's height: the SVG scales to fit both width and height */ fit?: boolean }) {
+export function Diagram({ layout, selected, onSelect, maxHeight, fit, compactTools }: { layout: Layout; selected: Selection | null; onSelect: (s: Selection) => void; maxHeight?: string; /** fill the parent's height: the SVG scales to fit both width and height */ fit?: boolean; /** short screens: one small link that opens the tools card instead of the chips row */ compactTools?: boolean }) {
   const { nodes, agents, packets, activeEdge, doneEdges, tools, lang, speed } = useStore()
   const d = t(lang)
   const g = GEO[layout]
@@ -280,6 +292,11 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit }: { layout
         ))}
       </svg>
 
+      {compactTools ? (
+        <button onClick={() => onSelect({ kind: 'node', id: 'tools' })} className="mx-auto mt-1 flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-muted hover:text-accent">
+          <Wrench size={11} /> {TOOL_NAMES.length} tools <ChevronDown size={11} />
+        </button>
+      ) : (
       <div className={`flex flex-wrap items-center gap-1.5 px-1 pt-2 ${wide ? 'justify-center' : ''}`}>
         <span className={`text-[10px] font-mono uppercase tracking-[0.18em] text-muted ${wide ? 'mr-2' : 'w-full'}`}>{d.toolsAvailable}</span>
         {TOOL_NAMES.map(name => {
@@ -294,6 +311,7 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit }: { layout
           return <motion.button key={name} onClick={() => onSelect({ kind: 'tool', id: name })} animate={style} transition={{ type: 'spring', stiffness: 300, damping: 22 }} title={d.toolState[state]} className={`text-[11px] font-mono px-2 py-1 rounded border cursor-pointer ${isSel('tool', name) ? 'ring-1 ring-text/70' : ''}`}>{name}</motion.button>
         })}
       </div>
+      )}
     </div>
   )
 }
@@ -315,7 +333,7 @@ function AgentNode({ a, pos, AW, AH, glow, name, selected, onClick }: { a: Agent
 }
 
 /** Centered modal with backdrop. Escape and click-outside close it; focus lands on the close button. */
-export function DetailModal({ selected, onClose }: { selected: Selection | null; onClose: () => void }) {
+export function DetailModal({ selected, onClose, onSelect }: { selected: Selection | null; onClose: () => void; onSelect?: (s: Selection) => void }) {
   const { lang, nodes, agents, tools } = useStore()
   const d = t(lang)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -343,6 +361,11 @@ export function DetailModal({ selected, onClose }: { selected: Selection | null;
             <Row k={d.whatIs} v={info.what} />
             <Row k={d.roleOf} v={info.role} />
             <Row k={d.howBuilt} v={info.how} />
+            {selected.kind === 'node' && selected.id === 'tools' && (
+              <div><div className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">{d.toolsAvailable}</div>
+                <div className="flex flex-wrap gap-1.5">{TOOL_NAMES.map(n => <button key={n} onClick={() => onSelect?.({ kind: 'tool', id: n })} className="text-[11px] font-mono px-2 py-1 rounded border border-line text-muted hover:text-accent hover:border-accent/60">{n}</button>)}</div>
+              </div>
+            )}
             <div><div className="text-[10px] font-mono uppercase tracking-wider text-muted mb-0.5">{d.liveState}</div><p className="text-xs font-mono text-accent">{live}</p></div>
           </motion.div>
         </motion.div>

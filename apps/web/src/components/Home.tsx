@@ -4,7 +4,7 @@ import { Github, Linkedin, FileDown } from 'lucide-react'
 import { useStore } from '../lib/store.ts'
 import { t } from '../lib/i18n.ts'
 import type { Selection } from '../lib/info.ts'
-import { Diagram, StagePanel, DetailModal, useRoomy } from './Architecture.tsx'
+import { Diagram, StagePanel, DetailModal, useRoomy, useShortHeight } from './Architecture.tsx'
 import { Composer } from './Chat.tsx'
 import { McpButton } from './Mcp.tsx'
 
@@ -13,6 +13,7 @@ export function Home() {
   const { lang, setLang, sending, messages } = useStore()
   const d = t(lang)
   const roomy = useRoomy()
+  const short = useShortHeight(900)
   const [selected, setSelected] = useState<Selection | null>(null)
   const running = sending || messages.length > 0
 
@@ -45,25 +46,25 @@ export function Home() {
       </header>
       <div className="gradient-bar" />
       {/* Fixed facts a recruiter wants in the first ten seconds, without asking. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 sm:px-6 py-1.5 text-[11px] font-mono text-muted border-b border-line/60">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 sm:px-6 py-1.5 text-[11px] font-mono text-muted border-b border-line/60 [@media(max-height:650px)]:hidden">
         {d.facts.map((x, i) => <span key={x} className="flex items-center gap-2">{i > 0 && <span className="text-line">|</span>}{x}</span>)}
         <span className="text-line">|</span>
         <a href="mailto:cristhianmarroquinse@gmail.com" className="text-accent hover:underline">cristhianmarroquinse@gmail.com</a>
       </div>
 
-      <main className="flex-1 min-h-0 overflow-y-auto flex flex-col px-4 sm:px-8 pt-4 pb-5">
+      <main className="flex-1 min-h-0 overflow-y-auto flex flex-col px-4 sm:px-8 pt-4 pb-5 [@media(max-height:760px)]:pt-2 [@media(max-height:760px)]:pb-3">
         {/* The diagram takes the free height; the composer (or the live stage) stays at the bottom. */}
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 170, damping: 24, delay: 0.1 }}
           className={`mx-auto ${roomy ? 'flex-1 min-h-0 w-full max-w-[1900px] overflow-hidden flex flex-col' : 'my-auto w-full max-w-[420px]'}`}>
-          <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} fit={roomy} />
+          <Diagram layout={roomy ? 'wide' : 'column'} selected={selected} onSelect={setSelected} fit={roomy} compactTools={short} />
         </motion.div>
 
         {running ? (
           <div className="mt-auto pt-4 flex justify-center"><StagePanel /></div>
         ) : (
-          <div className="mt-auto pt-8 w-full max-w-3xl mx-auto space-y-2">
+          <div className="mt-auto pt-8 [@media(max-height:760px)]:pt-3 w-full max-w-3xl mx-auto space-y-2">
             <div className="text-center space-y-1 pb-2">
-              <h2 className="text-2xl sm:text-3xl [@media(max-height:760px)]:text-xl font-bold tracking-tight">{d.homeTitle}</h2>
+              <h2 className="text-2xl sm:text-3xl [@media(max-height:760px)]:text-xl [@media(max-height:700px)]:hidden font-bold tracking-tight">{d.homeTitle}</h2>
               <p className="text-sm sm:text-base text-muted max-w-2xl mx-auto [@media(max-height:760px)]:hidden">{d.homeLead}</p>
             </div>
             <p className="text-center text-[11px] font-mono uppercase tracking-[0.18em] text-muted">{d.homeCta}</p>
@@ -72,7 +73,7 @@ export function Home() {
         )}
       </main>
 
-      <DetailModal selected={selected} onClose={() => setSelected(null)} />
+      <DetailModal selected={selected} onClose={() => setSelected(null)} onSelect={setSelected} />
     </div>
   )
 }

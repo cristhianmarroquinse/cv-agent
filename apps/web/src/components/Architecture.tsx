@@ -99,7 +99,7 @@ function wideGeometry(): Geometry {
     view: { w: 1120, h: 300 }, W, H, AW, AH, pos, edges, agentPos, agentPath,
     agentsLabel: () => ({ x: AX0 - AW / 2, y: AY - AH / 2 - 8 }),
     ghostAgent: agentPos(0),
-    minHeight: () => 300,
+    minHeight: n => (n ? 300 : 192),
   }
 }
 
@@ -249,13 +249,7 @@ export function Diagram({ layout, selected, onSelect, maxHeight, fit, compactToo
         {/* Agents lane: real agents when a run uses them, otherwise a ghost slot so the lane reads as part of the design. */}
         {n > 0
           ? <text x={label.x} y={label.y} textAnchor={wide ? 'start' : 'middle'} fontSize={7} fontFamily="JetBrains Mono, monospace" letterSpacing={1.5} fill="#5a6780">{d.agents.toUpperCase()}</text>
-          : settled && (
-            <g opacity={0.55}>
-              <path d={g.agentPath(0, 1, false)} fill="none" strokeWidth={1} className="edge-idle" />
-              <rect x={g.ghostAgent.x - g.AW / 2} y={g.ghostAgent.y - g.AH / 2} width={g.AW} height={g.AH} rx={6} fill="none" stroke="#2b3952" strokeWidth={1} strokeDasharray="3 3" />
-              <text x={g.ghostAgent.x} y={g.ghostAgent.y + 3} textAnchor="middle" fontSize={7.5} fontFamily="JetBrains Mono, monospace" fill="#5a6780">{d.agentsGhost}</text>
-            </g>
-          )}
+          : null}
 
         {ORDER.map(id => {
           const s = nodes[id]; const p = from.pos[id]

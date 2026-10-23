@@ -12,6 +12,11 @@ git push
 Railway then builds the image, runs the health check on `/api/health` and swaps the container
 with no downtime. A build takes about 2–3 minutes.
 
+Auto-deploy on push only works while the **Railway GitHub App** is installed on the GitHub account
+with access to this repo (Railway dashboard → Account settings → Integrations → GitHub, or
+https://github.com/apps/railway-app/installations/new). Without it the repo connection exists but
+pushes do nothing: check with `railway deployment list`, and deploy by hand with `railway up`.
+
 ## What the build does
 
 1. `bun install --frozen-lockfile` for the three workspaces.
@@ -23,6 +28,8 @@ with no downtime. A build takes about 2–3 minutes.
    web app.
 
 `railway.json` declares the Dockerfile builder, the health check path and the restart policy.
+(Railway calls this format deprecated in favour of `.railway/railway.ts`; it keeps working until
+2026-12-01, after which run `railway config migrate`.)
 
 ## Watching a deploy
 

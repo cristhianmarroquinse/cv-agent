@@ -117,10 +117,22 @@ MCP calls share the per-IP rate limit of the chat endpoint.
 
 ## Production
 
+The `Dockerfile` builds the web app, downloads the embedding model and embeds the knowledge base at
+build time (`apps/server/src/prewarm.ts`), so a fresh container answers its first request in ~2 s.
+One process serves the API, the SSE stream, the MCP endpoint and the static web app.
+
 ```bash
-bun run build                   # builds apps/web/dist
-bun run --cwd apps/server start # serves API + static web on PORT
+docker build -t cv-agent .
+docker run -p 3001:3001 --env-file .env cv-agent
 ```
 
-Set `OPENROUTER_API_KEY`, `PORT` and `SITE_URL` in the environment. Drop a `cv.pdf` into
-`apps/server/public/` to serve it from `/api/cv`; without it, `/api/cv` renders a generic PDF from `cv.data.ts` with pdf-lib and `/api/cv.md` serves the knowledge base.
+Environment: `OPENROUTER_API_KEY` (required), `PORT` (default 3001), `SITE_URL` (CORS and the
+referer sent to OpenRouter), `PUBLIC_URL` (what `/api/mcp` advertises), `EVALS_ADMIN_KEY`
+(required to launch bake-offs from the web). Caches, rate limits and the semantic index live in
+memory, so run a single replica; nothing needs a volume or a database.
+
+It is deployed on Railway (Hobby plan) from this repo: every push to `main` rebuilds the image.
+`railway.json` sets the health check (`/api/health`) and the restart policy.
+
+Drop a `cv.pdf` into `apps/server/public/` to serve it from `/api/cv`; without it, `/api/cv`
+renders a generic PDF from `cv.data.ts` with pdf-lib and `/api/cv.md` serves the knowledge base.

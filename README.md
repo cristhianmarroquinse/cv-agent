@@ -131,8 +131,7 @@ referer sent to OpenRouter), `PUBLIC_URL` (what `/api/mcp` advertises), `EVALS_A
 (required to launch bake-offs from the web). Caches, rate limits and the semantic index live in
 memory, so run a single replica; nothing needs a volume or a database.
 
-It is deployed on Railway (Hobby plan) from this repo: every push to `main` rebuilds the image.
-`railway.json` sets the health check (`/api/health`) and the restart policy.
+It is deployed on Railway from this repo: every push to `main` rebuilds the image. See [DEPLOY.md](DEPLOY.md).
 
 Drop a `cv.pdf` into `apps/server/public/` to serve it from `/api/cv`; without it, `/api/cv`
 renders a generic PDF from `cv.data.ts` with pdf-lib and `/api/cv.md` serves the knowledge base.
